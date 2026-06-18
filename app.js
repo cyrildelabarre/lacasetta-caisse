@@ -756,7 +756,7 @@ function showToast(msg) {
 // ══════════════════════════════════════════
 //  GOOGLE SHEETS — SYNCHRONISATION
 // ══════════════════════════════════════════
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyN6wZG-IczfsRoCPuFhyjzWqFy0Xp3pd5UykY_VvGmlfekCJSljk9mtaOj9GFlXJQMJA/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbz2tKzwJjd2CwVK9Lgg7f9OiSwOFp6pUVbGrXlhUCzCW7Q1AffmpUzyNWn-Zx7ym_PURw/exec';
 
 // Indicateur visuel dans le header
 const syncIndicator = (() => {
