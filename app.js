@@ -393,6 +393,7 @@ function openArticleModal(art = null) {
   document.getElementById('art-category').value = art?.category ?? '';
   document.getElementById('art-price').value    = art?.price    ?? '';
   document.getElementById('art-emoji').value    = art?.emoji    ?? '🍕';
+  document.getElementById('btn-modal-delete').style.display = art ? 'inline-flex' : 'none';
   document.getElementById('modal-article').classList.add('open');
 }
 
@@ -405,6 +406,20 @@ document.getElementById('modal-article').addEventListener('click', e => {
 function closeArticleModal() {
   document.getElementById('modal-article').classList.remove('open');
 }
+
+document.getElementById('btn-modal-delete').addEventListener('click', () => {
+  if (!editingArticleId) return;
+  if (!confirm('Supprimer cet article du catalogue ?')) return;
+  articles = articles.filter(a => a.id !== editingArticleId);
+  // Retire aussi du ticket en cours si présent
+  ticket = ticket.filter(l => l.article.id !== editingArticleId);
+  LS.set('pos_articles', articles);
+  closeArticleModal();
+  renderCategories();
+  renderArticles();
+  renderTicket();
+  showToast('Article supprimé.');
+});
 
 document.getElementById('btn-modal-save').addEventListener('click', () => {
   const name     = document.getElementById('art-name').value.trim();
