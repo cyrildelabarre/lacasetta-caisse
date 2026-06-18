@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>La Casetta — Caisse</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Caisse">
+  <meta name="theme-color" content="#89310B">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="logo">🍕 La Casetta</div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="caisse">Caisse</button>
+      <button class="tab-btn" data-tab="memo">Mémo du jour</button>
+      <button class="tab-btn" data-tab="reporting">Reporting</button>
+    </nav>
+    <div class="header-info">
+      <span id="date-display"></span>
+    </div>
+  </header>
+
+  <!-- ───── CAISSE ───── -->
+  <section id="tab-caisse" class="tab-content active">
+    <div class="caisse-layout">
+
+      <!-- Catalogue -->
+      <div class="catalogue">
+        <div class="catalogue-header">
+          <h2>Articles</h2>
+          <button class="btn-icon" id="btn-add-article" title="Ajouter un article">+</button>
+        </div>
+        <div class="categories" id="category-tabs"></div>
+        <div class="articles-grid" id="articles-grid"></div>
+      </div>
+
+      <!-- Ticket en cours -->
+      <div class="ticket-panel">
+        <div class="ticket-header">
+          <h2>Ticket en cours</h2>
+          <button class="btn-ghost" id="btn-clear-ticket">Vider</button>
+        </div>
+        <div class="ticket-lines" id="ticket-lines">
+          <p class="empty-msg">Aucun article</p>
+        </div>
+        <div class="ticket-total">
+          <span>Total</span>
+          <span id="ticket-total">0,00 €</span>
+        </div>
+        <div class="payment-section">
+          <p class="label">Mode de paiement</p>
+          <div class="payment-btns">
+            <button class="pay-btn active" data-method="especes">💶 Espèces</button>
+            <button class="pay-btn" data-method="carte">💳 Carte</button>
+          </div>
+          <div id="cash-change-row" class="cash-change-row">
+            <label>Montant remis</label>
+            <input type="number" id="cash-given" min="0" step="0.01" placeholder="0,00">
+            <span>Rendu : <strong id="cash-change">—</strong></span>
+          </div>
+        </div>
+        <button class="btn-validate" id="btn-validate">✔ Valider le paiement</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── MÉMO DU JOUR ───── -->
+  <section id="tab-memo" class="tab-content">
+    <div class="memo-layout">
+      <div class="memo-controls">
+        <label>Date</label>
+        <input type="date" id="memo-date">
+        <button class="btn-secondary" id="btn-export-memo">⬇ Exporter CSV</button>
+      </div>
+      <div class="memo-summary" id="memo-summary"></div>
+      <table class="memo-table" id="memo-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Heure</th>
+            <th>Articles</th>
+            <th>Paiement</th>
+            <th>Montant</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="memo-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ───── REPORTING ───── -->
+  <section id="tab-reporting" class="tab-content">
+    <div class="reporting-layout">
+
+      <div class="report-controls">
+        <label>Période</label>
+        <input type="date" id="report-start">
+        <span>→</span>
+        <input type="date" id="report-end">
+        <button class="btn-primary" id="btn-generate-report">Générer</button>
+      </div>
+
+      <div class="report-grid">
+
+        <div class="report-card" id="card-financier">
+          <h3>💰 Résumé financier</h3>
+          <div id="report-financier"></div>
+          <button class="btn-export" data-report="financier">⬇ CSV</button>
+        </div>
+
+        <div class="report-card" id="card-top-articles">
+          <h3>🏆 Articles les plus vendus</h3>
+          <div id="report-top-articles"></div>
+          <button class="btn-export" data-report="top-articles">⬇ CSV</button>
+        </div>
+
+        <div class="report-card" id="card-bottom-articles">
+          <h3>📉 Articles les moins vendus</h3>
+          <div id="report-bottom-articles"></div>
+          <button class="btn-export" data-report="bottom-articles">⬇ CSV</button>
+        </div>
+
+        <div class="report-card" id="card-paiements">
+          <h3>💳 Répartition des paiements</h3>
+          <div id="report-paiements"></div>
+          <button class="btn-export" data-report="paiements">⬇ CSV</button>
+        </div>
+
+        <div class="report-card" id="card-ca-jour">
+          <h3>📅 CA par jour</h3>
+          <div id="report-ca-jour"></div>
+          <button class="btn-export" data-report="ca-jour">⬇ CSV</button>
+        </div>
+
+        <div class="report-card" id="card-tickets">
+          <h3>🧾 Tickets complets</h3>
+          <div id="report-tickets"></div>
+          <button class="btn-export" data-report="tickets">⬇ CSV</button>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal ajout article -->
+  <div class="modal-overlay" id="modal-article">
+    <div class="modal">
+      <h3 id="modal-article-title">Nouvel article</h3>
+      <label>Nom</label>
+      <input type="text" id="art-name" placeholder="Margherita">
+      <label>Catégorie</label>
+      <input type="text" id="art-category" placeholder="Pizzas">
+      <label>Prix (€)</label>
+      <input type="number" id="art-price" min="0" step="0.01" placeholder="12.00">
+      <label>Emoji</label>
+      <input type="text" id="art-emoji" placeholder="🍕" maxlength="4">
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-modal-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-modal-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal confirmation annulation transaction -->
+  <div class="modal-overlay" id="modal-cancel-tx">
+    <div class="modal modal-sm">
+      <h3>Annuler la transaction ?</h3>
+      <p>Cette action est irréversible dans le mémo du jour.</p>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-cancel-no">Non</button>
+        <button class="btn-danger" id="btn-cancel-yes">Oui, annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+  </script>
+</body>
+</html>
