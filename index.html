@@ -13,6 +13,33 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- ───── ÉCRAN LOGIN ───── -->
+  <div id="login-screen">
+    <div class="login-box">
+      <div class="login-logo">🍕</div>
+      <h1 class="login-title">La Casetta</h1>
+      <p class="login-sub">Caisse</p>
+      <div class="pin-dots" id="pin-dots">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <p class="pin-error" id="pin-error"></p>
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key pin-key-empty"></button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key pin-key-del" id="pin-del">⌫</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div class="logo">🍕 La Casetta</div>
     <nav class="tabs">
@@ -22,6 +49,8 @@
     </nav>
     <div class="header-info">
       <span id="date-display"></span>
+      <button class="btn-lock" id="btn-change-pin" title="Changer le PIN" onclick="openPinModal()">⚙️</button>
+      <button class="btn-lock" id="btn-lock" title="Verrouiller">🔒</button>
     </div>
   </header>
 
@@ -175,6 +204,24 @@
       <div class="modal-actions">
         <button class="btn-ghost" id="btn-cancel-no">Non</button>
         <button class="btn-danger" id="btn-cancel-yes">Oui, annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal changement de PIN -->
+  <div class="modal-overlay" id="modal-pin">
+    <div class="modal modal-sm">
+      <h3>🔑 Changer le code PIN</h3>
+      <label>PIN actuel</label>
+      <input type="password" inputmode="numeric" maxlength="4" id="pin-current" placeholder="••••">
+      <label>Nouveau PIN (4 chiffres)</label>
+      <input type="password" inputmode="numeric" maxlength="4" id="pin-new" placeholder="••••">
+      <label>Confirmer le nouveau PIN</label>
+      <input type="password" inputmode="numeric" maxlength="4" id="pin-confirm" placeholder="••••">
+      <p class="pin-modal-error" id="pin-modal-error"></p>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-pin-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-pin-save">Enregistrer</button>
       </div>
     </div>
   </div>

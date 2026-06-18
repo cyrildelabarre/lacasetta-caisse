@@ -1,3 +1,78 @@
+/* ══════════════════ LOGIN ══════════════════ */
+#login-screen {
+  position: fixed; inset: 0;
+  background: var(--terracotta);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  transition: opacity .3s;
+}
+#login-screen.hidden { opacity: 0; pointer-events: none; }
+
+.login-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .6rem;
+}
+
+.login-logo { font-size: 3.5rem; }
+.login-title { color: var(--white); font-size: 2rem; font-weight: 800; letter-spacing: .04em; }
+.login-sub { color: rgba(255,255,255,.65); font-size: 1rem; margin-top: -.4rem; }
+
+.pin-dots {
+  display: flex;
+  gap: .8rem;
+  margin: .8rem 0 .2rem;
+}
+.pin-dots span {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.6);
+  background: transparent;
+  transition: background .15s, border-color .15s;
+}
+.pin-dots span.filled {
+  background: var(--white);
+  border-color: var(--white);
+}
+.pin-dots span.error {
+  border-color: #ff8a80;
+  background: #ff8a80;
+}
+
+.pin-error {
+  color: #ff8a80;
+  font-size: .85rem;
+  min-height: 1.1rem;
+  text-align: center;
+}
+
+.pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  gap: .6rem;
+  margin-top: .4rem;
+}
+
+.pin-key {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,.15);
+  color: var(--white);
+  font-size: 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s, transform .08s;
+  user-select: none;
+}
+.pin-key:hover  { background: rgba(255,255,255,.25); }
+.pin-key:active { transform: scale(.92); background: rgba(255,255,255,.35); }
+.pin-key-empty  { background: transparent !important; cursor: default; }
+.pin-key-del    { font-size: 1.2rem; }
+
 /* ── Variables ── */
 :root {
   --terracotta: #89310B;
@@ -58,7 +133,21 @@ header {
 .tab-btn:hover { background: rgba(255,255,255,.25); color: var(--white); }
 .tab-btn.active { background: var(--white); color: var(--terracotta); font-weight: 700; }
 
-.header-info { font-size: .85rem; opacity: .85; white-space: nowrap; }
+.header-info { font-size: .85rem; opacity: .85; white-space: nowrap; display: flex; align-items: center; gap: .7rem; }
+
+.btn-lock {
+  background: rgba(255,255,255,.15);
+  border: none;
+  border-radius: 6px;
+  color: var(--white);
+  font-size: 1rem;
+  padding: .3rem .5rem;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-lock:hover { background: rgba(255,255,255,.3); }
+
+.pin-modal-error { color: var(--danger); font-size: .82rem; min-height: 1rem; }
 
 /* ── Tab content ── */
 .tab-content { display: none; flex: 1; overflow: hidden; }

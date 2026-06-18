@@ -3,6 +3,117 @@
    Stockage : localStorage
 ═══════════════════════════════════════════ */
 
+// ══════════════════════════════════════════
+//  LOGIN — code PIN
+// ══════════════════════════════════════════
+(function initLogin() {
+  const DEFAULT_PIN = '1234';
+  const getPin = () => localStorage.getItem('pos_pin') || DEFAULT_PIN;
+
+  const screen   = document.getElementById('login-screen');
+  const dots     = document.querySelectorAll('#pin-dots span');
+  const errorEl  = document.getElementById('pin-error');
+  let   entry    = '';
+
+  function updateDots() {
+    dots.forEach((d, i) => {
+      d.classList.toggle('filled', i < entry.length);
+      d.classList.remove('error');
+    });
+    errorEl.textContent = '';
+  }
+
+  function shake() {
+    dots.forEach(d => d.classList.add('error'));
+    errorEl.textContent = 'Code incorrect';
+    entry = '';
+    setTimeout(updateDots, 600);
+  }
+
+  function tryUnlock() {
+    if (entry === getPin()) {
+      sessionStorage.setItem('pos_unlocked', '1');
+      screen.classList.add('hidden');
+      setTimeout(() => screen.style.display = 'none', 300);
+    } else {
+      shake();
+    }
+  }
+
+  function pressKey(val) {
+    if (entry.length >= 4) return;
+    entry += val;
+    updateDots();
+    if (entry.length === 4) setTimeout(tryUnlock, 150);
+  }
+
+  function pressDelete() {
+    entry = entry.slice(0, -1);
+    updateDots();
+  }
+
+  // Clavier PIN
+  document.querySelectorAll('.pin-key[data-val]').forEach(btn => {
+    btn.addEventListener('click', () => pressKey(btn.dataset.val));
+  });
+  document.getElementById('pin-del').addEventListener('click', pressDelete);
+
+  // Clavier physique
+  document.addEventListener('keydown', e => {
+    if (screen.classList.contains('hidden')) return;
+    if (e.key >= '0' && e.key <= '9') pressKey(e.key);
+    else if (e.key === 'Backspace') pressDelete();
+  });
+
+  // Si déjà déverrouillé dans cette session
+  if (sessionStorage.getItem('pos_unlocked') === '1') {
+    screen.style.display = 'none';
+  }
+
+  // Bouton verrou
+  document.getElementById('btn-lock').addEventListener('click', () => {
+    sessionStorage.removeItem('pos_unlocked');
+    entry = '';
+    updateDots();
+    screen.style.display = 'flex';
+    requestAnimationFrame(() => screen.classList.remove('hidden'));
+  });
+
+  // Modal changement de PIN
+  document.getElementById('btn-lock').addEventListener('dblclick', e => {
+    e.stopPropagation();
+  });
+
+  // Ouvrir modal PIN depuis un lien dans la page (bouton dans settings futur)
+  window.openPinModal = function() {
+    document.getElementById('modal-pin').classList.add('open');
+    document.getElementById('pin-current').value = '';
+    document.getElementById('pin-new').value = '';
+    document.getElementById('pin-confirm').value = '';
+    document.getElementById('pin-modal-error').textContent = '';
+  };
+
+  document.getElementById('btn-pin-cancel').addEventListener('click', () => {
+    document.getElementById('modal-pin').classList.remove('open');
+  });
+
+  document.getElementById('btn-pin-save').addEventListener('click', () => {
+    const current = document.getElementById('pin-current').value.trim();
+    const nouveau = document.getElementById('pin-new').value.trim();
+    const confirm = document.getElementById('pin-confirm').value.trim();
+    const errEl   = document.getElementById('pin-modal-error');
+
+    if (current !== getPin())            { errEl.textContent = 'Code actuel incorrect.'; return; }
+    if (!/^\d{4}$/.test(nouveau))        { errEl.textContent = 'Le nouveau PIN doit contenir exactement 4 chiffres.'; return; }
+    if (nouveau !== confirm)             { errEl.textContent = 'Les deux PINs ne correspondent pas.'; return; }
+
+    localStorage.setItem('pos_pin', nouveau);
+    document.getElementById('modal-pin').classList.remove('open');
+    // showToast est défini plus bas — on utilise un event pour ne pas dépendre de l'ordre
+    document.dispatchEvent(new CustomEvent('pos:toast', { detail: '✔ Code PIN modifié.' }));
+  });
+})();
+
 // ── Storage helpers ──────────────────────────────────────────────────────────
 const LS = {
   get: (k, def) => { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } },
@@ -616,6 +727,8 @@ function downloadCSV(filename, rows) {
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
+document.addEventListener('pos:toast', e => showToast(e.detail));
+
 let toastTimer;
 function showToast(msg) {
   const el = document.getElementById('toast');
