@@ -738,8 +738,71 @@ function showToast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+// ══════════════════════════════════════════
+//  GOOGLE SHEETS — SYNCHRONISATION
+// ══════════════════════════════════════════
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwd70qja8GpH5z7BAXY1YrTRhVB1IOBUSNJiuZTnLiW7Z826KCaInmL0mMtj0omDb3BPQ/exec';
+
+// Indicateur visuel dans le header
+const syncIndicator = (() => {
+  const el = document.createElement('span');
+  el.id = 'sync-indicator';
+  el.style.cssText = 'font-size:.75rem;opacity:.75;white-space:nowrap;';
+  document.querySelector('.header-info').prepend(el);
+  return el;
+})();
+
+function setSyncStatus(state) {
+  const map = { idle: '', syncing: '🔄 Sync...', ok: '✅ Sync OK', error: '⚠️ Hors ligne' };
+  syncIndicator.textContent = map[state] ?? '';
+}
+
+// Marque une transaction comme synchronisée
+function markSynced(ids) {
+  const txs = getTransactions();
+  ids.forEach(id => { const t = txs.find(t => t.id === id); if (t) t.synced = true; });
+  saveTransactions(txs);
+}
+
+// Envoie les transactions non synchronisées à Google Sheets
+async function syncToSheets() {
+  const pending = getTransactions().filter(t => !t.synced);
+  if (!pending.length) { setSyncStatus('idle'); return; }
+
+  setSyncStatus('syncing');
+  try {
+    const res = await fetch(SHEETS_URL, {
+      method: 'POST',
+      body: JSON.stringify(pending),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      markSynced(pending.map(t => t.id));
+      setSyncStatus('ok');
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    } else {
+      setSyncStatus('error');
+    }
+  } catch {
+    setSyncStatus('error');
+  }
+}
+
+// Sync à l'ouverture et à la mise en arrière-plan/fermeture
+document.addEventListener('visibilitychange', () => {
+  syncToSheets();
+});
+
+// Sync après chaque transaction validée
+const _origAddTransaction = addTransaction;
+window.addTransaction = function(tx) {
+  _origAddTransaction(tx);
+  syncToSheets();
+};
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderCategories();
 renderArticles();
 renderMemo();
 renderReporting();
+syncToSheets(); // sync au démarrage
