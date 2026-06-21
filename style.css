@@ -93,6 +93,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
@@ -236,6 +237,8 @@ header {
   transition: transform .12s, box-shadow .12s, border-color .12s;
   position: relative;
   user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .article-card:hover {
   transform: translateY(-2px);
@@ -336,6 +339,8 @@ header {
   font-size: .78rem;
   cursor: pointer;
   transition: all .15s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .pay-btn.active {
   border-color: var(--terracotta);
@@ -372,6 +377,8 @@ header {
   cursor: pointer;
   transition: background .15s;
   flex-shrink: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .btn-validate:hover { background: var(--olive-light); }
 .btn-validate:active { background: var(--olive); }
