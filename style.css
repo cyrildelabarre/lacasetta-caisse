@@ -148,6 +148,43 @@ header {
 }
 .btn-lock:hover { background: rgba(255,255,255,.3); }
 
+.btn-location {
+  background: rgba(255,255,255,.15);
+  border: none;
+  border-radius: 6px;
+  color: var(--white);
+  font-size: .8rem;
+  padding: .3rem .6rem;
+  cursor: pointer;
+  transition: background .15s;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-location:hover { background: rgba(255,255,255,.3); }
+
+/* Preset chips dans la modal emplacement */
+.location-chip {
+  background: var(--terracotta-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: .3rem .8rem;
+  font-size: .82rem;
+  cursor: pointer;
+  color: var(--dark);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: all .15s;
+}
+.location-chip:hover, .location-chip.active {
+  background: var(--terracotta);
+  color: var(--white);
+  border-color: var(--terracotta);
+}
+
 .pin-modal-error { color: var(--danger); font-size: .82rem; min-height: 1rem; }
 
 /* ── Tab content ── */

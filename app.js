@@ -513,6 +513,7 @@ document.getElementById('btn-validate').addEventListener('click', () => {
   const tx = {
     id:        uid(),
     date:      new Date().toISOString(),
+    location:  currentLocation || '',
     lines:     ticket.map(l => ({ ...l.article, qty: l.qty, subtotal: l.article.price * l.qty })),
     total,
     method:    payMethod,
@@ -675,6 +676,52 @@ document.getElementById('btn-export-memo').addEventListener('click', () => {
   downloadCSV(`memo_${date}.csv`, rows);
 });
 
+// ══════════════════ EMPLACEMENT ═══════════════════════════════════════════════
+
+const DEFAULT_LOCATIONS = ['Marché', 'Festival', 'Événement privé', 'Autre'];
+
+let currentLocation = LS.get('pos_location', '');
+
+function renderLocationBtn() {
+  document.getElementById('location-label').textContent = currentLocation || '—';
+}
+renderLocationBtn();
+
+document.getElementById('btn-location').addEventListener('click', () => {
+  const saved = LS.get('pos_location_history', DEFAULT_LOCATIONS);
+  const container = document.getElementById('location-presets');
+  container.innerHTML = '';
+  [...new Set([...DEFAULT_LOCATIONS, ...saved])].forEach(loc => {
+    const chip = document.createElement('button');
+    chip.className = 'location-chip' + (loc === currentLocation ? ' active' : '');
+    chip.textContent = loc;
+    chip.addEventListener('click', () => {
+      document.getElementById('location-input').value = loc;
+      container.querySelectorAll('.location-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+    container.appendChild(chip);
+  });
+  document.getElementById('location-input').value = currentLocation;
+  document.getElementById('modal-location').classList.add('open');
+});
+
+document.getElementById('btn-location-save').addEventListener('click', () => {
+  const val = document.getElementById('location-input').value.trim();
+  if (!val) { showToast('Veuillez saisir un emplacement.'); return; }
+  currentLocation = val;
+  LS.set('pos_location', val);
+  const history = [...new Set([val, ...LS.get('pos_location_history', DEFAULT_LOCATIONS)])].slice(0, 10);
+  LS.set('pos_location_history', history);
+  renderLocationBtn();
+  document.getElementById('modal-location').classList.remove('open');
+  showToast(`📍 Emplacement : ${val}`);
+});
+
+document.getElementById('btn-location-cancel').addEventListener('click', () => {
+  document.getElementById('modal-location').classList.remove('open');
+});
+
 // ══════════════════ REPORTING ═════════════════════════════════════════════════
 
 const reportStart = document.getElementById('report-start');
@@ -702,6 +749,8 @@ function renderReporting() {
   renderPaiements(txs);
   renderCaJour(txs);
   renderTicketsReport(txs);
+  renderPanierMoyen(txs);
+  renderCaEmplacement(txs);
 }
 
 function renderFinancier(txs, start, end) {
@@ -820,6 +869,88 @@ function renderTicketsReport(txs) {
   ` : '<p class="empty-msg">Aucune donnée</p>';
 }
 
+function renderPanierMoyen(txs) {
+  const el = document.getElementById('report-panier-moyen');
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+
+  // Panier moyen global
+  const total  = txs.reduce((s, t) => s + t.total, 0);
+  const avg    = total / txs.length;
+
+  // Panier moyen par tranche horaire (matin / midi / après-midi / soir)
+  const tranches = { 'Matin (8h–12h)': [], 'Midi (12h–14h)': [], 'Après-midi (14h–18h)': [], 'Soir (18h–23h)': [] };
+  txs.forEach(tx => {
+    const h = new Date(tx.date).getHours();
+    if      (h >= 8  && h < 12) tranches['Matin (8h–12h)'].push(tx.total);
+    else if (h >= 12 && h < 14) tranches['Midi (12h–14h)'].push(tx.total);
+    else if (h >= 14 && h < 18) tranches['Après-midi (14h–18h)'].push(tx.total);
+    else if (h >= 18 && h < 23) tranches['Soir (18h–23h)'].push(tx.total);
+  });
+
+  // Panier moyen par nb articles
+  const bySize = {};
+  txs.forEach(tx => {
+    const nb = tx.lines.reduce((s, l) => s + l.qty, 0);
+    const key = nb === 1 ? '1 article' : nb <= 3 ? '2–3 articles' : '4+ articles';
+    if (!bySize[key]) bySize[key] = { sum: 0, n: 0 };
+    bySize[key].sum += tx.total; bySize[key].n++;
+  });
+
+  el.innerHTML = `
+    <div class="kpi-grid" style="margin-bottom:.8rem">
+      <div class="kpi"><strong>${fmtEur(avg)}</strong>Panier moyen global</div>
+      <div class="kpi"><strong>${txs.length}</strong>Tickets</div>
+      <div class="kpi"><strong>${fmtEur(Math.max(...txs.map(t=>t.total)))}</strong>Ticket max</div>
+      <div class="kpi"><strong>${fmtEur(Math.min(...txs.map(t=>t.total)))}</strong>Ticket min</div>
+    </div>
+    <table class="report-table">
+      <thead><tr><th>Tranche horaire</th><th>Panier moy.</th><th>Tickets</th></tr></thead>
+      <tbody>${Object.entries(tranches).filter(([,v])=>v.length).map(([k,v])=>`
+        <tr><td>${k}</td><td>${fmtEur(v.reduce((s,x)=>s+x,0)/v.length)}</td><td>${v.length}</td></tr>
+      `).join('')}</tbody>
+    </table>
+    <table class="report-table" style="margin-top:.5rem">
+      <thead><tr><th>Taille commande</th><th>Panier moy.</th><th>Tickets</th></tr></thead>
+      <tbody>${Object.entries(bySize).map(([k,v])=>`
+        <tr><td>${k}</td><td>${fmtEur(v.sum/v.n)}</td><td>${v.n}</td></tr>
+      `).join('')}</tbody>
+    </table>
+  `;
+}
+
+function renderCaEmplacement(txs) {
+  const el = document.getElementById('report-ca-emplacement');
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+
+  const byLoc = {};
+  txs.forEach(tx => {
+    const loc = tx.location || '(non défini)';
+    if (!byLoc[loc]) byLoc[loc] = { total: 0, n: 0, days: new Set() };
+    byLoc[loc].total += tx.total;
+    byLoc[loc].n++;
+    byLoc[loc].days.add(tx.date.slice(0, 10));
+  });
+
+  const rows = Object.entries(byLoc).sort((a, b) => b[1].total - a[1].total);
+  const grandTotal = rows.reduce((s, [, v]) => s + v.total, 0);
+
+  el.innerHTML = `
+    <table class="report-table">
+      <thead><tr><th>Emplacement</th><th>CA</th><th>Part</th><th>Tickets</th><th>Jours</th><th>Moy/j</th></tr></thead>
+      <tbody>${rows.map(([loc, v]) => `
+        <tr>
+          <td>📍 ${loc}</td>
+          <td style="font-weight:700">${fmtEur(v.total)}</td>
+          <td>${Math.round(v.total / grandTotal * 100)}%</td>
+          <td>${v.n}</td>
+          <td>${v.days.size}</td>
+          <td>${fmtEur(v.total / v.days.size)}</td>
+        </tr>
+      `).join('')}</tbody>
+    </table>
+  `;
+}
+
 // ── Export CSV generic ────────────────────────────────────────────────────────
 document.querySelectorAll('.btn-export').forEach(btn => {
   btn.addEventListener('click', () => exportReport(btn.dataset.report));
@@ -864,9 +995,31 @@ function exportReport(type) {
       break;
     }
     case 'tickets': {
-      rows = [['Date', 'Heure', 'Articles', 'Paiement', 'Total (€)'],
-        ...txs.map(tx => [tx.date.slice(0,10), fmtTime(tx.date),
+      rows = [['Date', 'Heure', 'Emplacement', 'Articles', 'Paiement', 'Total (€)'],
+        ...txs.map(tx => [tx.date.slice(0,10), fmtTime(tx.date), tx.location || '',
           tx.lines.map(l=>`${l.name} x${l.qty}`).join(' | '), tx.method, tx.total.toFixed(2)])];
+      break;
+    }
+    case 'panier-moyen': {
+      const total = txs.reduce((s, t) => s + t.total, 0);
+      rows = [['Indicateur', 'Valeur'],
+        ['Panier moyen global', (total / (txs.length || 1)).toFixed(2)],
+        ['Tickets', txs.length],
+        ['Ticket max', Math.max(...txs.map(t=>t.total)).toFixed(2)],
+        ['Ticket min', Math.min(...txs.map(t=>t.total)).toFixed(2)],
+      ]; break;
+    }
+    case 'ca-emplacement': {
+      const byLoc = {};
+      txs.forEach(tx => {
+        const loc = tx.location || '(non défini)';
+        if (!byLoc[loc]) byLoc[loc] = { total: 0, n: 0, days: new Set() };
+        byLoc[loc].total += tx.total; byLoc[loc].n++;
+        byLoc[loc].days.add(tx.date.slice(0,10));
+      });
+      rows = [['Emplacement', 'CA (€)', 'Tickets', 'Jours', 'Moy/jour (€)'],
+        ...Object.entries(byLoc).sort((a,b)=>b[1].total-a[1].total).map(([loc,v]) =>
+          [loc, v.total.toFixed(2), v.n, v.days.size, (v.total/v.days.size).toFixed(2)])];
       break;
     }
     default: return;
