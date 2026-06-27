@@ -275,15 +275,17 @@ function renderArticles() {
     grid.appendChild(card);
   });
 
-  // Initialise le drag & drop sur la grille reconstruite
-  initDragAndDrop(grid);
 }
 
 // ══════════════════ MODE ÉDITION / DRAG & DROP ════════════════════════════════
 
 let editMode = false;
 
-document.getElementById('btn-edit-mode').addEventListener('click', toggleEditMode);
+// État partagé du drag — une seule instance, persistante
+const drag = {
+  el: null, ghost: null, placeholder: null,
+  offX: 0,  offY: 0,
+};
 
 function toggleEditMode() {
   editMode = !editMode;
@@ -294,149 +296,123 @@ function toggleEditMode() {
   btn.classList.toggle('active', editMode);
   grid.classList.toggle('edit-mode', editMode);
   banner.classList.toggle('visible', editMode);
-  renderArticles(); // re-render pour ajouter/enlever les poignées
+  renderArticles();
+}
+document.getElementById('btn-edit-mode').addEventListener('click', toggleEditMode);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function dragGetCardAt(grid, x, y) {
+  for (const el of grid.querySelectorAll('.article-card:not(.drag-placeholder)')) {
+    if (el === drag.el) continue;
+    const r = el.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el;
+  }
+  return null;
 }
 
-function initDragAndDrop(grid) {
-  let draggingEl   = null;
-  let ghostEl      = null;
-  let placeholder  = null;
-  let startX = 0, startY = 0;
-  let offsetX = 0, offsetY = 0;
+function dragStart(card, clientX, clientY) {
+  const r = card.getBoundingClientRect();
+  drag.el  = card;
+  drag.offX = clientX - r.left;
+  drag.offY = clientY - r.top;
+  card.style.opacity = '0.25';
 
-  function getCardAt(x, y) {
-    const els = grid.querySelectorAll('.article-card:not(.drag-placeholder)');
-    for (const el of els) {
-      if (el === draggingEl) continue;
-      const r = el.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el;
-    }
-    return null;
-  }
+  // Fantôme
+  drag.ghost = document.createElement('div');
+  drag.ghost.className = 'drag-ghost';
+  drag.ghost.innerHTML = card.innerHTML;
+  drag.ghost.style.cssText =
+    `width:${r.width}px;height:${r.height}px;` +
+    `left:${clientX - drag.offX}px;top:${clientY - drag.offY}px;`;
+  document.body.appendChild(drag.ghost);
 
-  function createGhost(card, x, y) {
-    const r = card.getBoundingClientRect();
-    ghostEl = document.createElement('div');
-    ghostEl.className = 'drag-ghost';
-    ghostEl.innerHTML = card.innerHTML;
-    ghostEl.style.width  = r.width  + 'px';
-    ghostEl.style.height = r.height + 'px';
-    ghostEl.style.left   = r.left + 'px';
-    ghostEl.style.top    = r.top  + 'px';
-    document.body.appendChild(ghostEl);
-    offsetX = x - r.left;
-    offsetY = y - r.top;
-  }
+  // Placeholder (trou)
+  drag.placeholder = document.createElement('div');
+  drag.placeholder.className = 'article-card drag-placeholder';
+  drag.placeholder.style.cssText = `width:${r.width}px;height:${r.height}px;`;
+  card.after(drag.placeholder);
+}
 
-  function moveGhost(x, y) {
-    if (!ghostEl) return;
-    ghostEl.style.left = (x - offsetX) + 'px';
-    ghostEl.style.top  = (y - offsetY) + 'px';
-  }
+function dragMove(grid, clientX, clientY) {
+  if (!drag.el) return;
+  drag.ghost.style.left = (clientX - drag.offX) + 'px';
+  drag.ghost.style.top  = (clientY - drag.offY) + 'px';
 
-  function createPlaceholder(ref) {
-    if (placeholder) return;
-    placeholder = document.createElement('div');
-    placeholder.className = 'article-card drag-placeholder';
-    placeholder.style.width  = ref.offsetWidth  + 'px';
-    placeholder.style.height = ref.offsetHeight + 'px';
-    ref.parentNode.insertBefore(placeholder, ref);
-  }
+  const target = dragGetCardAt(grid, clientX, clientY);
+  if (!target) return;
+  const r   = target.getBoundingClientRect();
+  const mid = r.left + r.width / 2;
+  target.parentNode.insertBefore(drag.placeholder, clientX < mid ? target : target.nextSibling);
+}
 
-  function cleanup() {
-    if (ghostEl)      { ghostEl.remove(); ghostEl = null; }
-    if (placeholder)  { placeholder.remove(); placeholder = null; }
-    if (draggingEl)   { draggingEl.style.opacity = ''; draggingEl = null; }
-  }
+function dragEnd(grid) {
+  if (!drag.el) return;
+  if (drag.placeholder) drag.placeholder.before(drag.el);
+  drag.el.style.opacity = '';
+  drag.ghost?.remove();
+  drag.placeholder?.remove();
+  drag.el = drag.ghost = drag.placeholder = null;
+  dragSaveOrder(grid);
+}
 
-  function saveOrder() {
-    const cards = [...grid.querySelectorAll('.article-card:not(.drag-placeholder)')];
-    const ids   = cards.map(c => c.dataset.artId);
-    const sorted = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
-    // Conserve les articles qui ne sont pas affichés (autre catégorie)
-    const hidden = articles.filter(a => !ids.includes(a.id));
-    articles = [...sorted, ...hidden];
-    LS.set('pos_articles', articles);
-  }
+function dragSaveOrder(grid) {
+  const ids    = [...grid.querySelectorAll('.article-card[data-art-id]')].map(c => c.dataset.artId);
+  const sorted = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
+  const hidden = articles.filter(a => !ids.includes(a.id));
+  articles = [...sorted, ...hidden];
+  LS.set('pos_articles', articles);
+}
 
-  // ── Touch events (iPad) ──────────────────────────────────────────
-  grid.addEventListener('touchstart', e => {
+// ── Initialisation unique des listeners (sur le document) ────────────────────
+(function initDrag() {
+  const getGrid = () => document.getElementById('articles-grid');
+
+  // TOUCH
+  document.addEventListener('touchstart', e => {
     if (!editMode) return;
-    const card = e.target.closest('.article-card');
+    const card = e.target.closest('#articles-grid .article-card');
     if (!card || card.classList.contains('drag-placeholder')) return;
     e.preventDefault();
-    const touch = e.touches[0];
-    draggingEl = card;
-    draggingEl.style.opacity = '0.3';
-    createGhost(touch.clientX, touch.clientY);
-    // placeholder après la card
-    placeholder = document.createElement('div');
-    placeholder.className = 'article-card drag-placeholder';
-    placeholder.style.width  = card.offsetWidth  + 'px';
-    placeholder.style.height = card.offsetHeight + 'px';
-    card.parentNode.insertBefore(placeholder, card.nextSibling);
+    const t = e.touches[0];
+    dragStart(card, t.clientX, t.clientY);
   }, { passive: false });
 
-  grid.addEventListener('touchmove', e => {
-    if (!draggingEl || !ghostEl) return;
+  document.addEventListener('touchmove', e => {
+    if (!drag.el) return;
     e.preventDefault();
-    const touch = e.touches[0];
-    moveGhost(touch.clientX, touch.clientY);
-    const target = getCardAt(touch.clientX, touch.clientY);
-    if (target && placeholder) {
-      const r    = target.getBoundingClientRect();
-      const mid  = r.left + r.width / 2;
-      target.parentNode.insertBefore(
-        placeholder,
-        touch.clientX < mid ? target : target.nextSibling
-      );
-    }
+    const t = e.touches[0];
+    dragMove(getGrid(), t.clientX, t.clientY);
   }, { passive: false });
 
-  grid.addEventListener('touchend', e => {
-    if (!draggingEl) return;
-    if (placeholder) placeholder.parentNode.insertBefore(draggingEl, placeholder);
-    cleanup();
-    saveOrder();
+  document.addEventListener('touchend', () => {
+    if (!drag.el) return;
+    dragEnd(getGrid());
   });
 
-  // ── Mouse events (desktop) ───────────────────────────────────────
-  grid.addEventListener('mousedown', e => {
+  document.addEventListener('touchcancel', () => {
+    if (!drag.el) return;
+    dragEnd(getGrid());
+  });
+
+  // MOUSE
+  document.addEventListener('mousedown', e => {
     if (!editMode) return;
-    const card = e.target.closest('.article-card');
+    const card = e.target.closest('#articles-grid .article-card');
     if (!card || card.classList.contains('drag-placeholder')) return;
     e.preventDefault();
-    draggingEl = card;
-    draggingEl.style.opacity = '0.3';
-    createGhost(e.clientX, e.clientY);
-    placeholder = document.createElement('div');
-    placeholder.className = 'article-card drag-placeholder';
-    placeholder.style.width  = card.offsetWidth  + 'px';
-    placeholder.style.height = card.offsetHeight + 'px';
-    card.parentNode.insertBefore(placeholder, card.nextSibling);
+    dragStart(card, e.clientX, e.clientY);
   });
 
   document.addEventListener('mousemove', e => {
-    if (!draggingEl || !ghostEl) return;
-    moveGhost(e.clientX, e.clientY);
-    const target = getCardAt(e.clientX, e.clientY);
-    if (target && placeholder) {
-      const r   = target.getBoundingClientRect();
-      const mid = r.left + r.width / 2;
-      target.parentNode.insertBefore(
-        placeholder,
-        e.clientX < mid ? target : target.nextSibling
-      );
-    }
+    if (!drag.el) return;
+    dragMove(getGrid(), e.clientX, e.clientY);
   });
 
-  document.addEventListener('mouseup', e => {
-    if (!draggingEl) return;
-    if (placeholder) placeholder.parentNode.insertBefore(draggingEl, placeholder);
-    cleanup();
-    saveOrder();
+  document.addEventListener('mouseup', () => {
+    if (!drag.el) return;
+    dragEnd(getGrid());
   });
-}
+})();
 
 // ══════════════════ TICKET ═════════════════════════════════════════════════════
 
