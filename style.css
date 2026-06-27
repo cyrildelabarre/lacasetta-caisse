@@ -261,6 +261,77 @@ header {
 }
 .article-card:hover .article-edit-btn { opacity: 1; }
 
+/* ── Mode édition ── */
+.btn-edit-mode {
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  padding: .3rem .7rem;
+  font-size: .8rem;
+  cursor: pointer;
+  color: var(--mid);
+  font-weight: 600;
+  transition: all .15s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-edit-mode:hover   { border-color: var(--terracotta); color: var(--terracotta); }
+.btn-edit-mode.active  { background: var(--terracotta); color: var(--white); border-color: var(--terracotta); }
+
+/* Grille en mode édition */
+.articles-grid.edit-mode .article-card {
+  cursor: grab;
+  border: 2px dashed var(--terracotta);
+  background: #fff9f7;
+}
+.articles-grid.edit-mode .article-card:active { cursor: grabbing; }
+
+/* Poignée de drag */
+.drag-handle {
+  position: absolute;
+  top: 4px; left: 5px;
+  font-size: .9rem;
+  color: #ccc;
+  line-height: 1;
+  pointer-events: none;
+}
+.articles-grid.edit-mode .drag-handle { color: var(--terracotta); }
+
+/* Card fantôme pendant le drag */
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 500;
+  opacity: .85;
+  transform: scale(1.05) rotate(2deg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  border-radius: var(--radius);
+  background: var(--white);
+  border: 2px solid var(--terracotta);
+  padding: .9rem .6rem;
+  text-align: center;
+  width: 130px;
+}
+
+/* Card placeholder (trou pendant le drag) */
+.drag-placeholder {
+  border: 2px dashed var(--terracotta) !important;
+  background: var(--terracotta-bg) !important;
+  opacity: .5;
+}
+
+/* Bannière mode édition */
+.edit-banner {
+  display: none;
+  background: var(--terracotta);
+  color: var(--white);
+  font-size: .8rem;
+  padding: .3rem 1rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+.edit-banner.visible { display: block; }
+
 /* Ticket */
 .ticket-panel {
   display: flex;

@@ -62,8 +62,12 @@
       <div class="catalogue">
         <div class="catalogue-header">
           <h2>Articles</h2>
-          <button class="btn-icon" id="btn-add-article" title="Ajouter un article">+</button>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn-edit-mode" id="btn-edit-mode" title="Réorganiser les articles">✏️ Éditer</button>
+            <button class="btn-icon" id="btn-add-article" title="Ajouter un article">+</button>
+          </div>
         </div>
+        <div class="edit-banner" id="edit-banner">✏️ Mode édition — faites glisser les articles pour les réorganiser · Tapez ✏️ Éditer pour terminer</div>
         <div class="categories" id="category-tabs"></div>
         <div class="articles-grid" id="articles-grid"></div>
       </div>
