@@ -367,32 +367,33 @@ function dragSaveOrder(grid) {
 (function initDrag() {
   const getGrid = () => document.getElementById('articles-grid');
 
-  // TOUCH
+  // TOUCH — les listeners move/end sont attachés directement à la carte au moment
+  // du touchstart : seul moyen fiable de court-circuiter le scroll iOS Safari.
   document.addEventListener('touchstart', e => {
     if (!editMode) return;
     const card = e.target.closest('#articles-grid .article-card');
     if (!card || card.classList.contains('drag-placeholder')) return;
     e.preventDefault();
+    e.stopPropagation();
     const t = e.touches[0];
     dragStart(card, t.clientX, t.clientY);
+
+    function onMove(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const touch = ev.touches[0];
+      dragMove(getGrid(), touch.clientX, touch.clientY);
+    }
+    function onEnd() {
+      dragEnd(getGrid());
+      card.removeEventListener('touchmove',   onMove);
+      card.removeEventListener('touchend',    onEnd);
+      card.removeEventListener('touchcancel', onEnd);
+    }
+    card.addEventListener('touchmove',   onMove,  { passive: false });
+    card.addEventListener('touchend',    onEnd);
+    card.addEventListener('touchcancel', onEnd);
   }, { passive: false });
-
-  document.addEventListener('touchmove', e => {
-    if (!drag.el) return;
-    e.preventDefault();
-    const t = e.touches[0];
-    dragMove(getGrid(), t.clientX, t.clientY);
-  }, { passive: false });
-
-  document.addEventListener('touchend', () => {
-    if (!drag.el) return;
-    dragEnd(getGrid());
-  });
-
-  document.addEventListener('touchcancel', () => {
-    if (!drag.el) return;
-    dragEnd(getGrid());
-  });
 
   // MOUSE
   document.addEventListener('mousedown', e => {

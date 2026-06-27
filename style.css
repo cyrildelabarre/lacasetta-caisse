@@ -283,6 +283,13 @@ header {
   cursor: grab;
   border: 2px dashed var(--terracotta);
   background: #fff9f7;
+  touch-action: none; /* override manipulation — requis pour drag iOS */
+  -webkit-user-select: none;
+  user-select: none;
+}
+.articles-grid.edit-mode {
+  touch-action: none; /* empêche le scroll d'intercepter le drag */
+  overflow: hidden;
 }
 .articles-grid.edit-mode .article-card:active { cursor: grabbing; }
 
