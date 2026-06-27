@@ -678,9 +678,40 @@ document.getElementById('btn-export-memo').addEventListener('click', () => {
 
 // ══════════════════ EMPLACEMENT ═══════════════════════════════════════════════
 
-const DEFAULT_LOCATIONS = ['Marché', 'Festival', 'Événement privé', 'Autre'];
+// Calendrier fixe La Casetta (0=dim, 1=lun, …, 6=sam)
+const WEEKLY_SCHEDULE = {
+  1: { city: 'Feings',                  place: 'Parking de l\'école',      hours: '18h–21h30' },
+  2: { city: 'Thenay',                  place: 'Place de l\'église',        hours: '18h–21h30' },
+  3: { city: 'Cande-sur-Beuvron',       place: 'Place des Cèdres',         hours: '18h–21h30' },
+  4: { city: 'Rilly-sur-Loire',         place: 'Parking salle des fêtes',  hours: '18h–21h30' },
+  5: { city: 'Saint-Gervais-la-Forêt', place: 'Place du Marché',          hours: '18h–21h30' },
+};
 
-let currentLocation = LS.get('pos_location', '');
+function scheduleForDate(dateStr) {
+  const dow = new Date(dateStr + 'T12:00:00').getDay();
+  return WEEKLY_SCHEDULE[dow] || null;
+}
+
+function locationLabelFromSchedule(s) {
+  return s ? `${s.city} — ${s.place}` : '';
+}
+
+// Auto-détection : si nouvelle journée, on repart sur le programme
+function autoDetectLocation() {
+  const today     = todayISO();
+  const lastDate  = LS.get('pos_location_date', '');
+  if (lastDate === today) return LS.get('pos_location', ''); // journée déjà initialisée
+
+  const sched = scheduleForDate(today);
+  const auto  = locationLabelFromSchedule(sched);
+  if (auto) {
+    LS.set('pos_location', auto);
+    LS.set('pos_location_date', today);
+  }
+  return auto || LS.get('pos_location', '');
+}
+
+let currentLocation = autoDetectLocation();
 
 function renderLocationBtn() {
   document.getElementById('location-label').textContent = currentLocation || '—';
@@ -688,20 +719,38 @@ function renderLocationBtn() {
 renderLocationBtn();
 
 document.getElementById('btn-location').addEventListener('click', () => {
-  const saved = LS.get('pos_location_history', DEFAULT_LOCATIONS);
+  const today     = todayISO();
+  const sched     = scheduleForDate(today);
+  const autoLabel = locationLabelFromSchedule(sched);
+  const history   = LS.get('pos_location_history', []);
+
   const container = document.getElementById('location-presets');
   container.innerHTML = '';
-  [...new Set([...DEFAULT_LOCATIONS, ...saved])].forEach(loc => {
+
+  // Suggestion du jour en premier si dispo
+  const chips = autoLabel
+    ? [{ label: `📅 Aujourd'hui : ${sched.city}`, value: autoLabel }, ...history.filter(h => h !== autoLabel).map(h => ({ label: h, value: h }))]
+    : history.map(h => ({ label: h, value: h }));
+
+  chips.forEach(({ label, value }) => {
     const chip = document.createElement('button');
-    chip.className = 'location-chip' + (loc === currentLocation ? ' active' : '');
-    chip.textContent = loc;
+    chip.className = 'location-chip' + (value === currentLocation ? ' active' : '');
+    chip.textContent = label;
     chip.addEventListener('click', () => {
-      document.getElementById('location-input').value = loc;
+      document.getElementById('location-input').value = value;
       container.querySelectorAll('.location-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
     });
     container.appendChild(chip);
   });
+
+  // Info horaires si programme du jour
+  const infoEl = document.getElementById('location-schedule-info');
+  if (infoEl) {
+    infoEl.textContent = sched ? `🕐 ${sched.hours}` : '';
+    infoEl.style.display = sched ? 'block' : 'none';
+  }
+
   document.getElementById('location-input').value = currentLocation;
   document.getElementById('modal-location').classList.add('open');
 });
@@ -711,7 +760,8 @@ document.getElementById('btn-location-save').addEventListener('click', () => {
   if (!val) { showToast('Veuillez saisir un emplacement.'); return; }
   currentLocation = val;
   LS.set('pos_location', val);
-  const history = [...new Set([val, ...LS.get('pos_location_history', DEFAULT_LOCATIONS)])].slice(0, 10);
+  LS.set('pos_location_date', todayISO());
+  const history = [...new Set([val, ...LS.get('pos_location_history', [])])].slice(0, 10);
   LS.set('pos_location_history', history);
   renderLocationBtn();
   document.getElementById('modal-location').classList.remove('open');
