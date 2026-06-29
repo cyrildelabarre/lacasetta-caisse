@@ -718,24 +718,27 @@ function renderLocationBtn() {
 }
 renderLocationBtn();
 
+// Jours de la semaine pour libellé des chips (1=lun … 5=ven)
+const DOW_LABELS = { 1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Jeu', 5: 'Ven' };
+
 document.getElementById('btn-location').addEventListener('click', () => {
-  const today     = todayISO();
-  const sched     = scheduleForDate(today);
-  const autoLabel = locationLabelFromSchedule(sched);
-  const history   = LS.get('pos_location_history', []);
+  const today    = todayISO();
+  const todayDow = new Date(today + 'T12:00:00').getDay();
 
   const container = document.getElementById('location-presets');
   container.innerHTML = '';
 
-  // Suggestion du jour en premier si dispo
-  const chips = autoLabel
-    ? [{ label: `📅 Aujourd'hui : ${sched.city}`, value: autoLabel }, ...history.filter(h => h !== autoLabel).map(h => ({ label: h, value: h }))]
-    : history.map(h => ({ label: h, value: h }));
+  // Les 5 emplacements du calendrier (un par jour ouvré), aujourd'hui en premier et marqué 📅
+  const days = Object.keys(WEEKLY_SCHEDULE).map(Number)
+    .sort((a, b) => (a === todayDow ? -1 : b === todayDow ? 1 : a - b));
 
-  chips.forEach(({ label, value }) => {
+  days.forEach(dow => {
+    const s     = WEEKLY_SCHEDULE[dow];
+    const value = locationLabelFromSchedule(s);
+    const isToday = dow === todayDow;
     const chip = document.createElement('button');
     chip.className = 'location-chip' + (value === currentLocation ? ' active' : '');
-    chip.textContent = label;
+    chip.innerHTML = `${isToday ? '📅 ' : ''}<strong>${DOW_LABELS[dow]}</strong> · ${s.city}`;
     chip.addEventListener('click', () => {
       document.getElementById('location-input').value = value;
       container.querySelectorAll('.location-chip').forEach(c => c.classList.remove('active'));
@@ -744,7 +747,8 @@ document.getElementById('btn-location').addEventListener('click', () => {
     container.appendChild(chip);
   });
 
-  // Info horaires si programme du jour
+  // Info horaires du programme du jour
+  const sched  = scheduleForDate(today);
   const infoEl = document.getElementById('location-schedule-info');
   if (infoEl) {
     infoEl.textContent = sched ? `🕐 ${sched.hours}` : '';
