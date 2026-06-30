@@ -555,6 +555,85 @@ function createWeeklyTrigger() {
 }
 
 // ════════════════════════════════════════════
+//  PUBLICATION FACEBOOK AUTOMATIQUE (emplacement du jour)
+// ════════════════════════════════════════════
+
+const FB_API = 'https://graph.facebook.com/v21.0';
+
+// Calendrier hebdo La Casetta + lien Maps (0=dim … 6=sam). Aligné sur le site.
+const FB_SCHEDULE = {
+  1: { city: 'Feings',                 place: 'Parking de l\'école',     hours: '18h–21h30', map: 'https://maps.google.com/maps?q=47.437806,1.353444' },
+  2: { city: 'Thenay',                 place: 'Place de l\'église',      hours: '18h–21h30', map: 'https://maps.google.com/maps?q=47.387500,1.288194' },
+  3: { city: 'Cande-sur-Beuvron',      place: 'Place des Cèdres',        hours: '18h–21h30', map: 'https://maps.google.com/maps?q=47.497778,1.263583' },
+  4: { city: 'Rilly-sur-Loire',        place: 'Parking salle des fêtes', hours: '18h–21h30', map: 'https://maps.google.com/maps?q=47.467056,1.133167' },
+  5: { city: 'Saint-Gervais-la-Forêt', place: 'Place du Marché',         hours: '18h–21h30', map: 'https://maps.google.com/maps?q=47.5671834,1.3587285' },
+};
+
+// ⚠️ NE PAS mettre le jeton dans ce fichier (repo public !).
+// Renseigne tes 2 valeurs ci-dessous, exécute setupFacebook() UNE FOIS,
+// puis efface-les (elles sont enregistrées dans les Script Properties privées).
+function setupFacebook() {
+  const PAGE_ID    = 'COLLE_ICI_TON_ID_DE_PAGE';
+  const PAGE_TOKEN = 'COLLE_ICI_TON_JETON_DE_PAGE';
+  const p = PropertiesService.getScriptProperties();
+  p.setProperty('FB_PAGE_ID', PAGE_ID);
+  p.setProperty('FB_PAGE_TOKEN', PAGE_TOKEN);
+  Logger.log('Identifiants Facebook enregistrés. Tu peux maintenant effacer les valeurs ci-dessus.');
+}
+
+// Construit le texte du post pour l'emplacement du jour.
+function fbMessageForToday() {
+  const s = FB_SCHEDULE[new Date().getDay()];
+  if (!s) return null; // week-end : pas de service
+  return `📍 Aujourd'hui, La Casetta est à ${s.city} — ${s.place} !\n`
+       + `🕕 Service de ${s.hours}\n\n`
+       + `Venez déguster nos pizzas artisanales, pâte maturée et produits frais 🍕🔥\n\n`
+       + `🗺️ Itinéraire : ${s.map}`;
+}
+
+// Publie l'emplacement du jour sur la Page Facebook. (Déclenché chaque jour.)
+function postTodayLocation() {
+  const message = fbMessageForToday();
+  if (!message) { Logger.log('Week-end — aucune publication.'); return; }
+
+  const p     = PropertiesService.getScriptProperties();
+  const pageId = p.getProperty('FB_PAGE_ID');
+  const token  = p.getProperty('FB_PAGE_TOKEN');
+  if (!pageId || !token) throw new Error('Identifiants Facebook manquants — exécute setupFacebook() d\'abord.');
+
+  const res = UrlFetchApp.fetch(`${FB_API}/${pageId}/feed`, {
+    method: 'post',
+    muteHttpExceptions: true,
+    payload: { message: message, access_token: token }
+  });
+  const json = JSON.parse(res.getContentText());
+  if (json.error) throw new Error('Erreur Facebook : ' + json.error.message);
+  Logger.log('Publié ✓ id=' + json.id);
+  return json;
+}
+
+// Test sans dépendre du jour : publie l'emplacement du LUNDI (Feings).
+function testPostFacebook() {
+  const s = FB_SCHEDULE[1];
+  const p = PropertiesService.getScriptProperties();
+  const msg = `📍 [TEST] La Casetta serait à ${s.city} — ${s.place} ! 🕕 ${s.hours}\n🗺️ ${s.map}`;
+  const res = UrlFetchApp.fetch(`${FB_API}/${p.getProperty('FB_PAGE_ID')}/feed`, {
+    method:'post', muteHttpExceptions:true,
+    payload:{ message: msg, access_token: p.getProperty('FB_PAGE_TOKEN') }
+  });
+  Logger.log(res.getContentText());
+}
+
+// À EXÉCUTER UNE FOIS : programme la publication chaque jour à 10h.
+function createDailyFacebookTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'postTodayLocation') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('postTodayLocation')
+    .timeBased().everyDays(1).atHour(10).nearMinute(0).create();
+}
+
+// ════════════════════════════════════════════
 //  doPost / doGet
 // ════════════════════════════════════════════
 
