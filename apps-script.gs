@@ -1,0 +1,491 @@
+/**
+ * La Casetta — Caisse · Google Apps Script (backend Google Sheets)
+ * --------------------------------------------------------------
+ * Reçoit les transactions du POS (doPost) et construit les feuilles de KPI.
+ * Toutes les synthèses sont calculées EN JS (pas de QUERY) → robuste.
+ *
+ * Déploiement : Déployer ▸ Gérer les déploiements ▸ (crayon) Modifier ▸
+ * Nouvelle version ▸ Déployer.  L'URL /exec reste identique.
+ */
+
+const SHEET_NAME = 'Transactions';
+const PROP_KEY   = 'SPREADSHEET_ID';
+const TZ         = 'Europe/Paris';
+
+// L'ordre des colonnes ci-dessous EST l'ordre des colonnes A..O de la feuille.
+const HEADERS = [
+  'ID Transaction','Date','Heure','N° ticket du jour',
+  'Article','Catégorie','Prix unitaire (€)','Quantité article','Sous-total (€)',
+  'Total ticket (€)','Nb articles commande','Paiement','Emplacement','Statut ticket','Synchronisé le'
+];
+// Index (0-based) pour la lecture
+const COL = {
+  id:0, date:1, heure:2, ticketNo:3, article:4, cat:5, pu:6, qty:7, sub:8,
+  total:9, nbArt:10, pay:11, loc:12, statut:13, sync:14
+};
+
+const JOURS = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']; // getDay(): 0=Dim
+
+// ════════════════════════════════════════════
+//  SPREADSHEET / FEUILLE TRANSACTIONS
+// ════════════════════════════════════════════
+
+function getOrCreateSpreadsheet() {
+  const props = PropertiesService.getScriptProperties();
+  let ssId = props.getProperty(PROP_KEY), ss;
+  if (ssId) { try { ss = SpreadsheetApp.openById(ssId); } catch(e) { ssId = null; } }
+  if (!ssId) { ss = SpreadsheetApp.create('La Casetta — Caisse'); props.setProperty(PROP_KEY, ss.getId()); }
+  return ss;
+}
+
+function getOrCreateTransactionsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAME);
+
+  // Détection d'un ancien schéma (en-têtes différents) → on ARCHIVE l'ancienne
+  // feuille (renommée) au lieu de la supprimer, pour ne rien perdre, et on
+  // repart sur une feuille propre au nouveau format (15 colonnes + Emplacement).
+  if (sheet) {
+    const cur = sheet.getRange(1,1,1,Math.max(sheet.getLastColumn(),1)).getValues()[0];
+    const sameHeader = cur.length === HEADERS.length && HEADERS.every((h,i)=>cur[i]===h);
+    if (!sameHeader) {
+      const stamp = Utilities.formatDate(new Date(), TZ, 'yyyyMMdd-HHmm');
+      sheet.setName('Transactions (ancien ' + stamp + ')');
+      sheet = null;
+    }
+  }
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME, 0);
+    sheet.appendRow(HEADERS);
+    sheet.setFrozenRows(1);
+    styleHeader(sheet, HEADERS.length, '#89310B');
+    sheet.getRange('B2:B').setNumberFormat('dd/mm/yyyy');
+  }
+  return sheet;
+}
+
+function styleHeader(sheet, cols, color) {
+  sheet.getRange(1,1,1,cols).setFontWeight('bold').setBackground(color).setFontColor('#ffffff');
+}
+
+function ensureSheet(ss, name, afterName) {
+  let s = ss.getSheetByName(name);
+  if (!s) { const ref = ss.getSheetByName(afterName); s = ss.insertSheet(name, ref ? ref.getIndex() : ss.getSheets().length); }
+  s.clearContents(); s.clearFormats();
+  s.setConditionalFormatRules([]); // retire les règles de MFC résiduelles
+  return s;
+}
+
+// Numérote les tickets par jour (1, 2, 3… réinitialisé chaque jour)
+function numberTickets(sheet) {
+  const lr = sheet.getLastRow(); if (lr < 2) return;
+  const data = sheet.getRange(2,1,lr-1,2).getValues(); // A (id) + B (date)
+  const perDay = {}; let prevId = null, cur = 0;
+  const out = data.map(r => {
+    const id = r[0];
+    const d  = r[1] instanceof Date ? Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd') : String(r[1]);
+    if (!id) return [''];
+    if (id !== prevId) { perDay[d] = (perDay[d]||0)+1; cur = perDay[d]; prevId = id; }
+    return [cur];
+  });
+  sheet.getRange(2,4,out.length,1).setValues(out);
+}
+
+// ════════════════════════════════════════════
+//  LECTURE + AGRÉGATION (tout en JS)
+// ════════════════════════════════════════════
+
+function readValidatedRows(ss) {
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const lr = sheet.getLastRow();
+  if (lr < 2) return [];
+  return sheet.getRange(2, 1, lr-1, HEADERS.length).getValues()
+    .filter(r => r[COL.id] && r[COL.statut] === 'Validé');
+}
+
+function dayKey(d)   { return d instanceof Date ? Utilities.formatDate(d, TZ, 'yyyy-MM-dd') : String(d); }
+function dayLabel(d) { return d instanceof Date ? Utilities.formatDate(d, TZ, 'dd/MM/yyyy')  : String(d); }
+function asDate(d)   { return d instanceof Date ? d : new Date(d); }
+
+// Construit toutes les agrégations nécessaires en un seul passage.
+function computeStats(rows) {
+  const lines   = [];                          // une entrée par ligne d'article
+  const tickets = {};                          // par ticket (compté une seule fois)
+
+  rows.forEach(r => {
+    lines.push({
+      art: r[COL.article], cat: r[COL.cat],
+      qty: Number(r[COL.qty])||0, sub: Number(r[COL.sub])||0,
+      hour: String(r[COL.heure]).slice(0,2),
+      dKey: dayKey(r[COL.date]), date: asDate(r[COL.date])
+    });
+    const id = r[COL.id];
+    if (!tickets[id]) {
+      tickets[id] = {
+        total: Number(r[COL.total])||0,
+        pay:   r[COL.pay],
+        loc:   r[COL.loc] || '(non défini)',
+        date:  asDate(r[COL.date]),
+        dKey:  dayKey(r[COL.date]),
+        hour:  String(r[COL.heure]).slice(0,2)
+      };
+    }
+  });
+
+  return { lines, tickets: Object.values(tickets), ticketMap: tickets };
+}
+
+// helpers d'agrégation
+function add(map, key, n) { map[key] = (map[key]||0) + n; }
+function sortDescByVal(obj, idx) {
+  return Object.entries(obj).sort((a,b)=> (idx==null? b[1]-a[1] : b[1][idx]-a[1][idx]));
+}
+
+// ════════════════════════════════════════════
+//  ÉCRITURE GÉNÉRIQUE D'UN TABLEAU
+// ════════════════════════════════════════════
+
+function writeTable(s, title, color, headers, rows, widths) {
+  const n = headers.length;
+  s.getRange(1,1,1,n).merge().setValue(title)
+   .setFontSize(12).setFontWeight('bold').setBackground(color)
+   .setFontColor('#ffffff').setHorizontalAlignment('center');
+  s.getRange(2,1,1,n).setValues([headers]).setFontWeight('bold').setBackground('#f4f6ee');
+  if (rows.length) s.getRange(3,1,rows.length,n).setValues(rows);
+  s.setFrozenRows(2);
+  if (widths) widths.forEach((w,i)=>s.setColumnWidth(i+1,w));
+}
+
+const eur = n => Math.round((Number(n)||0)*100)/100;
+
+// ════════════════════════════════════════════
+//  FEUILLES DE SYNTHÈSE
+// ════════════════════════════════════════════
+
+function createAllSheets(ss) {
+  const stats = computeStats(readValidatedRows(ss));
+  sheetCAParJour(ss, stats);
+  sheetCAParCategorie(ss, stats);
+  sheetCAParArticle(ss, stats);
+  sheetParHeure(ss, stats);
+  sheetParJourSemaine(ss, stats);
+  sheetCAParEmplacement(ss, stats);
+  sheetTableauDeBord(ss, stats);
+  sheetRecommandations(ss, stats);
+}
+
+function sheetCAParJour(ss, stats) {
+  const s = ensureSheet(ss, '📅 CA par Jour', SHEET_NAME);
+  const byDay = {}; // dKey -> {label, tickets, nbArt, ca, esp, carte}
+  const get = k => byDay[k] || (byDay[k] = {label:'', tickets:0, nbArt:0, ca:0, esp:0, carte:0});
+
+  stats.tickets.forEach(t => {
+    const gObj = get(t.dKey);
+    gObj.label = dayLabel(t.date);
+    gObj.tickets++; gObj.ca += t.total;
+    if (t.pay === 'especes') gObj.esp += t.total; else gObj.carte += t.total;
+  });
+  stats.lines.forEach(l => { get(l.dKey).nbArt += l.qty; });
+
+  const rows = Object.keys(byDay).sort().reverse().map(k => {
+    const gObj = byDay[k];
+    return [gObj.label, gObj.tickets, gObj.nbArt, eur(gObj.ca), eur(gObj.esp), eur(gObj.carte),
+            eur(gObj.ca/gObj.tickets)];
+  });
+  writeTable(s, "CHIFFRE D'AFFAIRES PAR JOUR", '#76894F',
+    ['Date','Nb tickets','Nb articles','CA total (€)','CA Espèces (€)','CA Carte (€)','Ticket moyen (€)'],
+    rows, [120,90,100,120,120,120,120]);
+}
+
+function sheetCAParCategorie(ss, stats) {
+  const s = ensureSheet(ss, '🍕 CA par Catégorie', '📅 CA par Jour');
+  const qty = {}, ca = {};
+  stats.lines.forEach(l => { add(qty, l.cat, l.qty); add(ca, l.cat, l.sub); });
+  const total = Object.values(ca).reduce((a,b)=>a+b,0) || 1;
+  const rows = sortDescByVal(ca).map(([cat,c]) =>
+    [cat, qty[cat], eur(c), c/total, eur(c/qty[cat])]);
+  writeTable(s, 'CA PAR CATÉGORIE', '#76894F',
+    ['Catégorie','Qté vendue','CA total (€)','% du CA','Prix moyen (€)'],
+    rows, [180,100,120,90,120]);
+  if (rows.length) s.getRange(3,4,rows.length,1).setNumberFormat('0.0%');
+}
+
+function sheetCAParArticle(ss, stats) {
+  const s = ensureSheet(ss, '🏆 CA par Article', '🍕 CA par Catégorie');
+  const qty = {}, ca = {}, cat = {};
+  stats.lines.forEach(l => { add(qty, l.art, l.qty); add(ca, l.art, l.sub); cat[l.art] = l.cat; });
+  const total = Object.values(ca).reduce((a,b)=>a+b,0) || 1;
+  const rows = sortDescByVal(ca).map(([art,c]) =>
+    [art, cat[art], qty[art], eur(c), eur(c/qty[art]), c/total]);
+  writeTable(s, 'CA PAR ARTICLE', '#76894F',
+    ['Article','Catégorie','Qté vendue','CA total (€)','Prix moy. (€)','% du CA'],
+    rows, [180,140,100,120,110,90]);
+  if (rows.length) s.getRange(3,6,rows.length,1).setNumberFormat('0.0%');
+}
+
+function sheetParHeure(ss, stats) {
+  const s = ensureSheet(ss, '⏰ Analyse par Heure', '🏆 CA par Article');
+  const tk = {}, ca = {}, art = {};
+  stats.tickets.forEach(t => { add(tk, t.hour, 1); add(ca, t.hour, t.total); });
+  stats.lines.forEach(l => add(art, l.hour, l.qty));
+  const rows = Object.keys(ca).sort().map(h =>
+    [h+'h', tk[h]||0, art[h]||0, eur(ca[h]), eur(ca[h]/(tk[h]||1))]);
+  writeTable(s, 'PERFORMANCE PAR HEURE DE SERVICE', '#89310B',
+    ['Heure','Nb tickets','Nb articles','CA total (€)','Ticket moyen (€)'],
+    rows, [70,110,110,110,110]);
+  if (rows.length) {
+    s.getRange(3,1,rows.length,1).setHorizontalAlignment('center');
+    const rule = SpreadsheetApp.newConditionalFormatRule()
+      .setGradientMinpoint('#ffffff').setGradientMaxpoint('#89310B')
+      .setRanges([s.getRange(3,4,rows.length,1)]).build();
+    s.setConditionalFormatRules([rule]);
+  }
+}
+
+function sheetParJourSemaine(ss, stats) {
+  const s = ensureSheet(ss, '📆 Jour de semaine', '⏰ Analyse par Heure');
+  const ca = {}, tickets = {}, services = {};
+  stats.tickets.forEach(t => {
+    const j = JOURS[t.date.getDay()];
+    add(ca, j, t.total); add(tickets, j, 1);
+    (services[j] = services[j] || new Set()).add(t.dKey);
+  });
+  const order = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+  const rows = order.filter(j => ca[j] != null).map(j => {
+    const nbServ = services[j].size;
+    return [j, nbServ, tickets[j], eur(ca[j]), eur(ca[j]/nbServ), eur(ca[j]/tickets[j])];
+  });
+  writeTable(s, 'PERFORMANCE PAR JOUR DE LA SEMAINE', '#89310B',
+    ['Jour','Nb services','Nb tickets total','CA total (€)','CA moyen/service (€)','Ticket moyen (€)'],
+    rows, [110,100,130,120,150,120]);
+}
+
+function sheetCAParEmplacement(ss, stats) {
+  const s = ensureSheet(ss, '📍 CA par Emplacement', '📆 Jour de semaine');
+  const ca = {}, tickets = {}, days = {};
+  stats.tickets.forEach(t => {
+    add(ca, t.loc, t.total); add(tickets, t.loc, 1);
+    (days[t.loc] = days[t.loc] || new Set()).add(t.dKey);
+  });
+  const total = Object.values(ca).reduce((a,b)=>a+b,0) || 1;
+  const rows = sortDescByVal(ca).map(([loc,c]) => {
+    const nbDays = days[loc].size;
+    return [loc, tickets[loc], eur(c), c/total, eur(c/tickets[loc]), nbDays, eur(c/nbDays)];
+  });
+  writeTable(s, 'CA PAR EMPLACEMENT', '#76894F',
+    ['Emplacement','Nb tickets','CA total (€)','% du CA','Ticket moyen (€)','Nb jours','CA moyen/jour (€)'],
+    rows, [200,100,120,90,130,90,140]);
+  if (rows.length) s.getRange(3,4,rows.length,1).setNumberFormat('0.0%');
+}
+
+function sheetTableauDeBord(ss, stats) {
+  const s = ensureSheet(ss, '📊 Tableau de bord', '📍 CA par Emplacement');
+  const now = new Date();
+  const within30date = d => (now - d) / 86400000 <= 30;
+
+  const tk30  = stats.tickets.filter(t => within30date(t.date));
+  const caTot = tk30.reduce((a,t)=>a+t.total,0);
+  const nbTk  = tk30.length;
+  const ticketMoy = nbTk ? caTot/nbTk : 0;
+
+  const caEsp   = tk30.filter(t=>t.pay==='especes').reduce((a,t)=>a+t.total,0);
+  const caCarte = caTot - caEsp;
+
+  // Articles 30j (depuis les lignes, qui portent désormais leur date)
+  let nbArt30 = 0;
+  const artCA = {}, artQty = {};
+  stats.lines.forEach(l => {
+    if (!within30date(l.date)) return;
+    nbArt30 += l.qty;
+    add(artCA,  l.art, l.sub);
+    add(artQty, l.art, l.qty);
+  });
+  const top5 = sortDescByVal(artCA).slice(0,5);
+
+  s.getRange('A1:D1').merge().setValue('TABLEAU DE BORD — LA CASETTA (30 derniers jours)')
+   .setFontSize(14).setFontWeight('bold').setBackground('#89310B').setFontColor('#ffffff')
+   .setHorizontalAlignment('center');
+
+  const rows = [
+    ['',''],
+    ['CA total',          eur(caTot)],
+    ['Nb tickets',        nbTk],
+    ['Ticket moyen',      eur(ticketMoy)],
+    ['Nb articles vendus',nbArt30],
+    ['',''],
+    ['💳 PAIEMENTS','Montant (€)'],
+    ['Espèces', eur(caEsp)],
+    ['Carte',   eur(caCarte)],
+    ['',''],
+  ];
+  s.getRange(2,1,rows.length,2).setValues(rows);
+  // Top 5
+  let r = 2 + rows.length;
+  s.getRange(r,1,1,3).setValues([['🏆 TOP 5 ARTICLES','Qté','CA (€)']])
+   .setFontWeight('bold').setBackground('#f4f6ee');
+  r++;
+  if (top5.length) {
+    s.getRange(r,1,top5.length,3).setValues(
+      top5.map(([art,c]) => [art, artQty[art], eur(c)]));
+  }
+  // styles
+  ['A3','A4','A5','A6'].forEach(a=>s.getRange(a).setFontWeight('bold'));
+  s.getRange('A8').setFontWeight('bold').setBackground('#f4f6ee');
+  s.getRange('B8').setFontWeight('bold').setBackground('#f4f6ee');
+  [180,140,140,140].forEach((w,i)=>s.setColumnWidth(i+1,w));
+  s.setFrozenRows(1);
+}
+
+// ════════════════════════════════════════════
+//  RECOMMANDATIONS (texte généré)
+// ════════════════════════════════════════════
+
+function sheetRecommandations(ss, stats) {
+  const s = ensureSheet(ss, '💡 Recommandations', '📊 Tableau de bord');
+  if (!stats.tickets.length) {
+    s.getRange('A1').setValue('💡 Pas encore assez de données pour générer des recommandations.');
+    return;
+  }
+
+  const artCA = {}, artQty = {}, catCA = {}, heureCA = {}, jourCA = {}, jourNb = {};
+  let nbEsp=0, nbCarte=0, caEsp=0, caCarte=0;
+
+  stats.lines.forEach(l => {
+    add(artCA, l.art, l.sub); add(artQty, l.art, l.qty);
+    add(catCA, l.cat, l.sub); add(heureCA, l.hour, l.sub);
+  });
+  stats.tickets.forEach(t => {
+    const j = JOURS[t.date.getDay()];
+    add(jourCA, j, t.total); add(jourNb, j, 1);
+    if (t.pay === 'especes') { nbEsp++; caEsp += t.total; } else { nbCarte++; caCarte += t.total; }
+  });
+
+  const totalCA   = Object.values(artCA).reduce((a,b)=>a+b,0);
+  const nbTx      = stats.tickets.length;
+  const ticketMoy = nbTx ? totalCA/nbTx : 0;
+  const topArts  = sortDescByVal(artCA);
+  const topHeure = sortDescByVal(heureCA);
+  const topJour  = sortDescByVal(jourCA);
+  const topCat   = sortDescByVal(catCA);
+
+  const now = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+  const fmt = n => (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',') + ' €';
+  const pct = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
+  const g   = (arr,i)=> arr[i] ? arr[i][0] : '—';
+  const gv  = (arr,i)=> arr[i] ? arr[i][1] : 0;
+
+  const lines = [
+    ['💡 RECOMMANDATIONS & INSIGHTS — La Casetta'],
+    [`Générées le ${now} · ${nbTx} tickets analysés · CA total ${fmt(totalCA)}`],
+    [''],
+    ['━━━  🏆  ARTICLES : CE QUI MARCHE  ━━━'],
+    [`✅  Top 1 : ${g(topArts,0)} → ${fmt(gv(topArts,0))} de CA (${pct(gv(topArts,0),totalCA)} du CA total)`],
+    [`✅  Top 2 : ${g(topArts,1)} → ${fmt(gv(topArts,1))}`],
+    [`✅  Top 3 : ${g(topArts,2)} → ${fmt(gv(topArts,2))}`],
+    [`👉  Astuce : mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`],
+    [''],
+    ['━━━  📉  ARTICLES À SURVEILLER  ━━━'],
+    [`⚠️   Moins vendu : ${g(topArts,topArts.length-1)} → ${fmt(gv(topArts,topArts.length-1))} (${artQty[g(topArts,topArts.length-1)]||0} vendus)`],
+    [`⚠️   2e moins vendu : ${g(topArts,topArts.length-2)} → ${fmt(gv(topArts,topArts.length-2))}`],
+    [`👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`],
+    [''],
+    ['━━━  🍕  CATÉGORIES  ━━━'],
+    ...topCat.map(([cat,ca],i) => [`${i===0?'🥇':i===1?'🥈':'🥉'}  ${cat} → ${fmt(ca)} (${pct(ca,totalCA)})`]),
+    [`👉  Astuce : les suppléments représentent ${pct(catCA['Suppléments']||0, totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`],
+    [''],
+    ['━━━  ⏰  HEURES DE POINTE  ━━━'],
+    [`🔥  Heure la plus chargée : ${g(topHeure,0)}h → ${fmt(gv(topHeure,0))}`],
+    [`🔥  2e heure : ${g(topHeure,1)}h → ${fmt(gv(topHeure,1))}`],
+    [`😴  Heure creuse : ${g(topHeure,topHeure.length-1)}h → ${fmt(gv(topHeure,topHeure.length-1))}`],
+    [`👉  Astuce : prépare ta mise en place 30 min avant ${g(topHeure,0)}h.`],
+    [''],
+    ['━━━  📆  JOURS DE LA SEMAINE  ━━━'],
+    [`📈  Meilleur jour : ${g(topJour,0)} → ${fmt(gv(topJour,0))} (${jourNb[g(topJour,0)]||0} tickets)`],
+    [`📉  Jour le plus calme : ${g(topJour,topJour.length-1)} → ${fmt(gv(topJour,topJour.length-1))}`],
+    [`👉  Astuce : concentre tes posts Instagram la veille de ton ${g(topJour,0)} pour maximiser la fréquentation.`],
+    [''],
+    ['━━━  💳  PAIEMENTS  ━━━'],
+    [`💶  Espèces : ${nbEsp} tickets (${pct(nbEsp,nbTx)}) → ${fmt(caEsp)}`],
+    [`💳  Carte : ${nbCarte} tickets (${pct(nbCarte,nbTx)}) → ${fmt(caCarte)}`],
+    [`👉  Astuce : ${nbTx && nbCarte/nbTx > 0.6 ? 'La carte domine — garde ton terminal chargé et fonctionnel.' : 'Beaucoup d\'espèces — prévois assez de monnaie en début de service.'}`],
+    [''],
+    ['━━━  💰  PANIER MOYEN  ━━━'],
+    [`📊  Ticket moyen actuel : ${fmt(ticketMoy)}`],
+    [`👉  Pour atteindre ${fmt(ticketMoy * 1.15)} (+15%) : propose un dessert ou un supplément à chaque commande.`],
+    [`👉  Upselling : convertir 1 client sur 3 vers un dessert (${fmt(4)}) = +${fmt(nbTx/3*4)} de CA sur la période.`],
+    [''],
+    ['━━━  📱  COMMUNICATION  ━━━'],
+    [`👉  Ton article star est "${g(topArts,0)}" — publie une belle photo sur Instagram.`],
+    [`👉  Ton meilleur jour est ${g(topJour,0)} — programme tes stories la veille.`],
+    [`👉  Fidélisation : envisage une carte de fidélité (ex. 10e pizza offerte).`],
+  ];
+
+  s.getRange(1,1,lines.length,1).setValues(lines);
+  s.setColumnWidth(1, 640);
+  s.getRange('A1').setFontSize(14).setFontWeight('bold').setBackground('#89310B').setFontColor('#ffffff');
+  s.getRange('A2').setFontStyle('italic').setFontColor('#555555');
+  lines.forEach((l,i) => {
+    if (l[0].startsWith('━━━')) s.getRange(i+1,1).setFontWeight('bold').setBackground('#f4f6ee').setFontColor('#89310B');
+    else if (l[0].startsWith('👉')) s.getRange(i+1,1).setFontStyle('italic').setFontColor('#76894F');
+  });
+  s.setRowHeights(1, lines.length, 22);
+}
+
+// ════════════════════════════════════════════
+//  doPost / doGet
+// ════════════════════════════════════════════
+
+function doPost(e) {
+  try {
+    const ss    = getOrCreateSpreadsheet();
+    const sheet = getOrCreateTransactionsSheet(ss);
+    const data  = JSON.parse(e.postData.contents);
+    const txs   = Array.isArray(data) ? data : [data];
+
+    const lr  = sheet.getLastRow();
+    const ids = lr > 1 ? sheet.getRange(2,1,lr-1,1).getValues().flat() : [];
+
+    let added = 0;
+    txs.forEach(tx => {
+      if (ids.includes(tx.id)) return;
+      const d    = new Date(tx.date);                 // Date réelle, stockée telle quelle
+      const time = Utilities.formatDate(d, TZ, 'HH:mm');
+      const sync = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+      const stat = tx.cancelled ? 'Annulé' : 'Validé';
+      const nb   = tx.lines.reduce((s,l)=>s+l.qty,0);
+      const loc  = tx.location || '';
+      tx.lines.forEach(l => {
+        sheet.appendRow([tx.id, d, time, '', l.name, l.category||'', l.price, l.qty, l.subtotal,
+                         tx.total, nb, tx.method, loc, stat, sync]);
+        added++;
+      });
+    });
+
+    if (added > 0) {
+      sheet.getRange('B2:B').setNumberFormat('dd/mm/yyyy');
+      numberTickets(sheet);
+      createAllSheets(ss);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ok:true, lines:added}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({ok:false, error:err.message}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet() {
+  return ContentService.createTextOutput(JSON.stringify({ok:true}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ════════════════════════════════════════════
+//  OUTIL : reconstruire toutes les feuilles à la demande
+//  (Exécuter cette fonction une fois depuis l'éditeur après mise à jour)
+// ════════════════════════════════════════════
+function rebuildAll() {
+  const ss = getOrCreateSpreadsheet();
+  numberTickets(ss.getSheetByName(SHEET_NAME));
+  createAllSheets(ss);
+}
