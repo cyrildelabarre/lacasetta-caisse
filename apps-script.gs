@@ -156,7 +156,66 @@ function writeTable(s, title, color, headers, rows, widths) {
   if (widths) widths.forEach((w,i)=>s.setColumnWidth(i+1,w));
 }
 
-const eur = n => Math.round((Number(n)||0)*100)/100;
+const eur    = n => Math.round((Number(n)||0)*100)/100;
+const eurStr = n => (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',') + ' €';
+
+// Génère les lignes de recommandations à partir d'un sous-ensemble de
+// tickets/lignes (toutes les données, ou seulement la semaine pour l'email).
+// Retourne un tableau de chaînes : '━━━' = titre de section, '👉' = astuce.
+function insightLines(tk, ln) {
+  const artCA={}, artQty={}, catCA={}, heureCA={}, jourCA={}, jourNb={};
+  let nbEsp=0, nbCarte=0, caEsp=0, caCarte=0;
+  ln.forEach(l => { add(artCA,l.art,l.sub); add(artQty,l.art,l.qty); add(catCA,l.cat,l.sub); add(heureCA,l.hour,l.sub); });
+  tk.forEach(t => { const j=JOURS[t.date.getDay()]; add(jourCA,j,t.total); add(jourNb,j,1);
+    if (t.pay==='especes'){nbEsp++;caEsp+=t.total;} else {nbCarte++;caCarte+=t.total;} });
+
+  const totalCA   = Object.values(artCA).reduce((a,b)=>a+b,0);
+  const nbTx      = tk.length;
+  const ticketMoy = nbTx ? totalCA/nbTx : 0;
+  const topArts = sortDescByVal(artCA), topHeure = sortDescByVal(heureCA);
+  const topJour = sortDescByVal(jourCA), topCat   = sortDescByVal(catCA);
+
+  const f   = eurStr;
+  const pct = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
+  const g   = (arr,i)=> arr[i] ? arr[i][0] : '—';
+  const gv  = (arr,i)=> arr[i] ? arr[i][1] : 0;
+
+  return [
+    '━━━  🏆  ARTICLES : CE QUI MARCHE  ━━━',
+    `✅  Top 1 : ${g(topArts,0)} → ${f(gv(topArts,0))} de CA (${pct(gv(topArts,0),totalCA)} du CA total)`,
+    `✅  Top 2 : ${g(topArts,1)} → ${f(gv(topArts,1))}`,
+    `✅  Top 3 : ${g(topArts,2)} → ${f(gv(topArts,2))}`,
+    `👉  Astuce : mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`,
+    '━━━  📉  ARTICLES À SURVEILLER  ━━━',
+    `⚠️  Moins vendu : ${g(topArts,topArts.length-1)} → ${f(gv(topArts,topArts.length-1))} (${artQty[g(topArts,topArts.length-1)]||0} vendus)`,
+    `⚠️  2e moins vendu : ${g(topArts,topArts.length-2)} → ${f(gv(topArts,topArts.length-2))}`,
+    `👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`,
+    '━━━  🍕  CATÉGORIES  ━━━',
+    ...topCat.map(([cat,ca],i) => `${i===0?'🥇':i===1?'🥈':'🥉'}  ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
+    `👉  Astuce : les suppléments représentent ${pct(catCA['Suppléments']||0, totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
+    '━━━  ⏰  HEURES DE POINTE  ━━━',
+    `🔥  Heure la plus chargée : ${g(topHeure,0)}h → ${f(gv(topHeure,0))}`,
+    `🔥  2e heure : ${g(topHeure,1)}h → ${f(gv(topHeure,1))}`,
+    `😴  Heure creuse : ${g(topHeure,topHeure.length-1)}h → ${f(gv(topHeure,topHeure.length-1))}`,
+    `👉  Astuce : prépare ta mise en place 30 min avant ${g(topHeure,0)}h.`,
+    '━━━  📆  JOURS DE LA SEMAINE  ━━━',
+    `📈  Meilleur jour : ${g(topJour,0)} → ${f(gv(topJour,0))} (${jourNb[g(topJour,0)]||0} tickets)`,
+    `📉  Jour le plus calme : ${g(topJour,topJour.length-1)} → ${f(gv(topJour,topJour.length-1))}`,
+    `👉  Astuce : concentre tes posts Instagram la veille de ton ${g(topJour,0)} pour maximiser la fréquentation.`,
+    '━━━  💳  PAIEMENTS  ━━━',
+    `💶  Espèces : ${nbEsp} tickets (${pct(nbEsp,nbTx)}) → ${f(caEsp)}`,
+    `💳  Carte : ${nbCarte} tickets (${pct(nbCarte,nbTx)}) → ${f(caCarte)}`,
+    `👉  Astuce : ${nbTx && nbCarte/nbTx > 0.6 ? 'La carte domine — garde ton terminal chargé et fonctionnel.' : 'Beaucoup d\'espèces — prévois assez de monnaie en début de service.'}`,
+    '━━━  💰  PANIER MOYEN  ━━━',
+    `📊  Ticket moyen : ${f(ticketMoy)}`,
+    `👉  Pour atteindre ${f(ticketMoy * 1.15)} (+15%) : propose un dessert ou un supplément à chaque commande.`,
+    `👉  Upselling : convertir 1 client sur 3 vers un dessert (${f(4)}) = +${f(nbTx/3*4)} de CA sur la période.`,
+    '━━━  📱  COMMUNICATION  ━━━',
+    `👉  Ton article star est "${g(topArts,0)}" — publie une belle photo sur Instagram.`,
+    `👉  Ton meilleur jour est ${g(topJour,0)} — programme tes stories la veille.`,
+    `👉  Fidélisation : envisage une carte de fidélité (ex. 10e pizza offerte).`,
+  ];
+}
 
 // ════════════════════════════════════════════
 //  FEUILLES DE SYNTHÈSE
@@ -347,77 +406,14 @@ function sheetRecommandations(ss, stats) {
     return;
   }
 
-  const artCA = {}, artQty = {}, catCA = {}, heureCA = {}, jourCA = {}, jourNb = {};
-  let nbEsp=0, nbCarte=0, caEsp=0, caCarte=0;
-
-  stats.lines.forEach(l => {
-    add(artCA, l.art, l.sub); add(artQty, l.art, l.qty);
-    add(catCA, l.cat, l.sub); add(heureCA, l.hour, l.sub);
-  });
-  stats.tickets.forEach(t => {
-    const j = JOURS[t.date.getDay()];
-    add(jourCA, j, t.total); add(jourNb, j, 1);
-    if (t.pay === 'especes') { nbEsp++; caEsp += t.total; } else { nbCarte++; caCarte += t.total; }
-  });
-
-  const totalCA   = Object.values(artCA).reduce((a,b)=>a+b,0);
-  const nbTx      = stats.tickets.length;
-  const ticketMoy = nbTx ? totalCA/nbTx : 0;
-  const topArts  = sortDescByVal(artCA);
-  const topHeure = sortDescByVal(heureCA);
-  const topJour  = sortDescByVal(jourCA);
-  const topCat   = sortDescByVal(catCA);
-
-  const now = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
-  const fmt = n => (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',') + ' €';
-  const pct = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
-  const g   = (arr,i)=> arr[i] ? arr[i][0] : '—';
-  const gv  = (arr,i)=> arr[i] ? arr[i][1] : 0;
+  const now     = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+  const totalCA = stats.lines.reduce((a,l)=>a+l.sub,0);
 
   const lines = [
     ['💡 RECOMMANDATIONS & INSIGHTS — La Casetta'],
-    [`Générées le ${now} · ${nbTx} tickets analysés · CA total ${fmt(totalCA)}`],
+    [`Générées le ${now} · ${stats.tickets.length} tickets analysés · CA total ${eurStr(totalCA)}`],
     [''],
-    ['━━━  🏆  ARTICLES : CE QUI MARCHE  ━━━'],
-    [`✅  Top 1 : ${g(topArts,0)} → ${fmt(gv(topArts,0))} de CA (${pct(gv(topArts,0),totalCA)} du CA total)`],
-    [`✅  Top 2 : ${g(topArts,1)} → ${fmt(gv(topArts,1))}`],
-    [`✅  Top 3 : ${g(topArts,2)} → ${fmt(gv(topArts,2))}`],
-    [`👉  Astuce : mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`],
-    [''],
-    ['━━━  📉  ARTICLES À SURVEILLER  ━━━'],
-    [`⚠️   Moins vendu : ${g(topArts,topArts.length-1)} → ${fmt(gv(topArts,topArts.length-1))} (${artQty[g(topArts,topArts.length-1)]||0} vendus)`],
-    [`⚠️   2e moins vendu : ${g(topArts,topArts.length-2)} → ${fmt(gv(topArts,topArts.length-2))}`],
-    [`👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`],
-    [''],
-    ['━━━  🍕  CATÉGORIES  ━━━'],
-    ...topCat.map(([cat,ca],i) => [`${i===0?'🥇':i===1?'🥈':'🥉'}  ${cat} → ${fmt(ca)} (${pct(ca,totalCA)})`]),
-    [`👉  Astuce : les suppléments représentent ${pct(catCA['Suppléments']||0, totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`],
-    [''],
-    ['━━━  ⏰  HEURES DE POINTE  ━━━'],
-    [`🔥  Heure la plus chargée : ${g(topHeure,0)}h → ${fmt(gv(topHeure,0))}`],
-    [`🔥  2e heure : ${g(topHeure,1)}h → ${fmt(gv(topHeure,1))}`],
-    [`😴  Heure creuse : ${g(topHeure,topHeure.length-1)}h → ${fmt(gv(topHeure,topHeure.length-1))}`],
-    [`👉  Astuce : prépare ta mise en place 30 min avant ${g(topHeure,0)}h.`],
-    [''],
-    ['━━━  📆  JOURS DE LA SEMAINE  ━━━'],
-    [`📈  Meilleur jour : ${g(topJour,0)} → ${fmt(gv(topJour,0))} (${jourNb[g(topJour,0)]||0} tickets)`],
-    [`📉  Jour le plus calme : ${g(topJour,topJour.length-1)} → ${fmt(gv(topJour,topJour.length-1))}`],
-    [`👉  Astuce : concentre tes posts Instagram la veille de ton ${g(topJour,0)} pour maximiser la fréquentation.`],
-    [''],
-    ['━━━  💳  PAIEMENTS  ━━━'],
-    [`💶  Espèces : ${nbEsp} tickets (${pct(nbEsp,nbTx)}) → ${fmt(caEsp)}`],
-    [`💳  Carte : ${nbCarte} tickets (${pct(nbCarte,nbTx)}) → ${fmt(caCarte)}`],
-    [`👉  Astuce : ${nbTx && nbCarte/nbTx > 0.6 ? 'La carte domine — garde ton terminal chargé et fonctionnel.' : 'Beaucoup d\'espèces — prévois assez de monnaie en début de service.'}`],
-    [''],
-    ['━━━  💰  PANIER MOYEN  ━━━'],
-    [`📊  Ticket moyen actuel : ${fmt(ticketMoy)}`],
-    [`👉  Pour atteindre ${fmt(ticketMoy * 1.15)} (+15%) : propose un dessert ou un supplément à chaque commande.`],
-    [`👉  Upselling : convertir 1 client sur 3 vers un dessert (${fmt(4)}) = +${fmt(nbTx/3*4)} de CA sur la période.`],
-    [''],
-    ['━━━  📱  COMMUNICATION  ━━━'],
-    [`👉  Ton article star est "${g(topArts,0)}" — publie une belle photo sur Instagram.`],
-    [`👉  Ton meilleur jour est ${g(topJour,0)} — programme tes stories la veille.`],
-    [`👉  Fidélisation : envisage une carte de fidélité (ex. 10e pizza offerte).`],
+    ...insightLines(stats.tickets, stats.lines).map(x => [x]),
   ];
 
   s.getRange(1,1,lines.length,1).setValues(lines);
@@ -435,7 +431,10 @@ function sheetRecommandations(ss, stats) {
 //  EMAIL HEBDOMADAIRE
 // ════════════════════════════════════════════
 
-const REPORT_EMAIL = 'cyril.delabarre@hotmail.com';
+// Destinataires du récap (séparés par des virgules).
+// ⚠️ 2e adresse à VÉRIFIER : tu as saisi "cyril.testhotmail.com" (sans @) —
+//    corrige-la ci-dessous avec le bon format, ex. cyril.test@hotmail.com
+const REPORT_EMAIL = 'cyril.delabarre@hotmail.com, cyril.test@hotmail.com';
 
 // Construit et envoie le récap de la semaine écoulée (7 derniers jours).
 function sendWeeklyReport() {
@@ -484,6 +483,15 @@ function sendWeeklyReport() {
   const th = t => `<th align="left" style="padding:8px 10px;background:${C.green};color:#fff;font-size:13px">${t}</th>`;
   const td = (v,b)=>`<td style="padding:8px 10px;border-bottom:1px solid ${C.line};font-size:13px${b?';font-weight:700':''}">${v}</td>`;
 
+  // Recommandations (mêmes insights que la feuille, sur la semaine écoulée)
+  const recoHtml = insightLines(tk, ln).map(line => {
+    if (line.startsWith('━━━'))
+      return `<div style="font-weight:700;color:${C.brand};font-size:14px;margin:16px 0 6px">${line.replace(/━/g,'').trim()}</div>`;
+    if (line.startsWith('👉'))
+      return `<div style="font-style:italic;color:${C.green};font-size:13px;margin:3px 0;padding-left:4px">${line}</div>`;
+    return `<div style="font-size:13px;margin:3px 0;color:#333">${line}</div>`;
+  }).join('');
+
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:auto;background:${C.bg};padding:0 0 24px;border-radius:12px;overflow:hidden">
     <div style="background:${C.brand};color:#fff;padding:22px 24px">
@@ -519,6 +527,11 @@ function sendWeeklyReport() {
         <tr>${th('Jour')}${th('Tickets')}${th('CA')}</tr>
         ${dayRows.map(d=>`<tr>${td(d.label)}${td(d.n)}${td(fmt(d.ca),true)}</tr>`).join('')}
       </table>
+
+      <h3 style="color:${C.brand};margin:26px 0 4px;font-size:16px">💡 Recommandations de la semaine</h3>
+      <div style="background:#fff;border:1px solid ${C.line};border-radius:8px;padding:12px 16px">
+        ${recoHtml}
+      </div>
 
       <p style="font-size:12px;color:#999;margin-top:24px">
         Détails complets et recommandations dans ton Google Sheet «&nbsp;La Casetta — Caisse&nbsp;».<br>
