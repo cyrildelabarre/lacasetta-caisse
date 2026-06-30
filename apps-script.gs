@@ -432,9 +432,7 @@ function sheetRecommandations(ss, stats) {
 // ════════════════════════════════════════════
 
 // Destinataires du récap (séparés par des virgules).
-// ⚠️ 2e adresse à VÉRIFIER : tu as saisi "cyril.testhotmail.com" (sans @) —
-//    corrige-la ci-dessous avec le bon format, ex. cyril.test@hotmail.com
-const REPORT_EMAIL = 'cyril.delabarre@hotmail.com, cyril.test@hotmail.com';
+const REPORT_EMAIL = 'cyril.delabarre@hotmail.com, clemence.bailly89@gmail.com';
 
 // Construit et envoie le récap de la semaine écoulée (7 derniers jours).
 function sendWeeklyReport() {
