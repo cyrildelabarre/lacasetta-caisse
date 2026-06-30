@@ -432,6 +432,118 @@ function sheetRecommandations(ss, stats) {
 }
 
 // ════════════════════════════════════════════
+//  EMAIL HEBDOMADAIRE
+// ════════════════════════════════════════════
+
+const REPORT_EMAIL = 'cyril.delabarre@hotmail.com';
+
+// Construit et envoie le récap de la semaine écoulée (7 derniers jours).
+function sendWeeklyReport() {
+  const ss    = getOrCreateSpreadsheet();
+  const stats = computeStats(readValidatedRows(ss));
+  const now   = new Date();
+  const within7 = d => (now - d) / 86400000 <= 7;
+
+  const tk = stats.tickets.filter(t => within7(t.date));
+  const ln = stats.lines.filter(l => within7(l.date));
+
+  const fmt = n => (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',') + ' €';
+  const pct = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
+  const periode = `${Utilities.formatDate(new Date(now-7*86400000), TZ, 'dd/MM')} – ${Utilities.formatDate(now, TZ, 'dd/MM/yyyy')}`;
+
+  if (!tk.length) {
+    MailApp.sendEmail({ to: REPORT_EMAIL, subject: `🍕 La Casetta — aucune vente cette semaine (${periode})`,
+      htmlBody: `<p>Bonjour,</p><p>Aucune vente enregistrée sur la période <b>${periode}</b>.</p>` });
+    return;
+  }
+
+  const caTot = tk.reduce((a,t)=>a+t.total,0);
+  const nbTk  = tk.length;
+  const nbArt = ln.reduce((a,l)=>a+l.qty,0);
+  const ticketMoy = caTot/nbTk;
+  const caEsp = tk.filter(t=>t.pay==='especes').reduce((a,t)=>a+t.total,0);
+  const caCarte = caTot - caEsp;
+
+  // Agrégations
+  const artCA={}, artQty={}, byDay={}, byLoc={};
+  ln.forEach(l => { add(artCA,l.art,l.sub); add(artQty,l.art,l.qty); });
+  tk.forEach(t => {
+    const d=byDay[t.dKey]||(byDay[t.dKey]={label:dayLabel(t.date),ca:0,n:0}); d.ca+=t.total; d.n++;
+    add(byLoc, t.loc, t.total);
+  });
+  const topArts = sortDescByVal(artCA).slice(0,5);
+  const locRows = sortDescByVal(byLoc);
+  const dayRows = Object.keys(byDay).sort().map(k=>byDay[k]);
+
+  // ── HTML ──
+  const C = { brand:'#89310B', green:'#76894F', bg:'#faf7f4', line:'#e7ddd6' };
+  const kpi = (label,val) =>
+    `<td style="padding:14px;background:#fff;border:1px solid ${C.line};border-radius:10px;text-align:center;width:25%">
+       <div style="font-size:22px;font-weight:800;color:${C.brand}">${val}</div>
+       <div style="font-size:12px;color:#888;margin-top:4px">${label}</div></td>`;
+  const th = t => `<th align="left" style="padding:8px 10px;background:${C.green};color:#fff;font-size:13px">${t}</th>`;
+  const td = (v,b)=>`<td style="padding:8px 10px;border-bottom:1px solid ${C.line};font-size:13px${b?';font-weight:700':''}">${v}</td>`;
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:auto;background:${C.bg};padding:0 0 24px;border-radius:12px;overflow:hidden">
+    <div style="background:${C.brand};color:#fff;padding:22px 24px">
+      <div style="font-size:20px;font-weight:800">🍕 La Casetta — Récap de la semaine</div>
+      <div style="opacity:.85;font-size:13px;margin-top:4px">${periode}</div>
+    </div>
+    <div style="padding:20px 24px">
+      <table width="100%" cellspacing="8" cellpadding="0"><tr>
+        ${kpi('CA total', fmt(caTot))}${kpi('Tickets', nbTk)}${kpi('Ticket moyen', fmt(ticketMoy))}${kpi('Articles vendus', nbArt)}
+      </tr></table>
+
+      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">💳 Paiements</h3>
+      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
+        <tr>${th('Mode')}${th('Montant')}${th('Part')}</tr>
+        <tr>${td('💶 Espèces')}${td(fmt(caEsp))}${td(pct(caEsp,caTot))}</tr>
+        <tr>${td('💳 Carte')}${td(fmt(caCarte))}${td(pct(caCarte,caTot))}</tr>
+      </table>
+
+      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🏆 Top articles</h3>
+      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
+        <tr>${th('Article')}${th('Qté')}${th('CA')}</tr>
+        ${topArts.map(([a,c])=>`<tr>${td(a)}${td(artQty[a])}${td(fmt(c),true)}</tr>`).join('')}
+      </table>
+
+      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">📍 CA par emplacement</h3>
+      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
+        <tr>${th('Emplacement')}${th('CA')}${th('Part')}</tr>
+        ${locRows.map(([l,c])=>`<tr>${td('📍 '+l)}${td(fmt(c),true)}${td(pct(c,caTot))}</tr>`).join('')}
+      </table>
+
+      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">📅 Détail par jour</h3>
+      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
+        <tr>${th('Jour')}${th('Tickets')}${th('CA')}</tr>
+        ${dayRows.map(d=>`<tr>${td(d.label)}${td(d.n)}${td(fmt(d.ca),true)}</tr>`).join('')}
+      </table>
+
+      <p style="font-size:12px;color:#999;margin-top:24px">
+        Détails complets et recommandations dans ton Google Sheet «&nbsp;La Casetta — Caisse&nbsp;».<br>
+        Email automatique envoyé chaque lundi.
+      </p>
+    </div>
+  </div>`;
+
+  MailApp.sendEmail({
+    to: REPORT_EMAIL,
+    subject: `🍕 La Casetta — Récap semaine : ${fmt(caTot)} · ${nbTk} tickets (${periode})`,
+    htmlBody: html
+  });
+}
+
+// À EXÉCUTER UNE FOIS depuis l'éditeur : programme l'envoi chaque lundi à 8h.
+function createWeeklyTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'sendWeeklyReport') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendWeeklyReport')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).nearMinute(0).create();
+}
+
+// ════════════════════════════════════════════
 //  doPost / doGet
 // ════════════════════════════════════════════
 
