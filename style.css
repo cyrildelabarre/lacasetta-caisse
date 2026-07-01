@@ -498,11 +498,10 @@ header {
 .btn-validate:hover { background: var(--olive-light); }
 .btn-validate:active { background: var(--olive); }
 
-.ticket-actions-row {
+.ticket-header-btns {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: .4rem;
-  flex-shrink: 0;
+  align-items: center;
+  gap: .5rem;
 }
 .btn-discount {
   display: inline-flex;
