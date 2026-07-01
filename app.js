@@ -433,13 +433,28 @@ function changeQty(artId, delta) {
   const line = ticket.find(l => l.article.id === artId);
   if (!line) return;
   line.qty += delta;
-  if (line.qty <= 0) removeFromTicket(artId);
-  else renderTicket();
+  if (line.qty <= 0) return removeFromTicket(artId);
+  // les unités offertes ne peuvent pas dépasser la quantité
+  if (line.freeUnits) line.freeUnits = Math.min(line.freeUnits, line.qty);
+  renderTicket();
 }
 
 function ticketTotal() {
-  return ticket.reduce((s, l) => s + l.article.price * l.qty, 0);
+  return ticket.reduce((s, l) => s + l.article.price * (l.qty - (l.freeUnits || 0)), 0);
 }
+
+// Offre une unité de la pizza la moins chère du panier (prix → 0 €).
+function offerCheapestPizza() {
+  const eligible = ticket.filter(l =>
+    /pizza/i.test(l.article.category || '') && (l.qty - (l.freeUnits || 0)) > 0);
+  if (!eligible.length) { showToast('Aucune pizza à offrir dans le panier.'); return; }
+  const cheapest = eligible.reduce((a, b) => (b.article.price < a.article.price ? b : a));
+  cheapest.freeUnits = (cheapest.freeUnits || 0) + 1;
+  renderTicket();
+  showToast(`🎁 ${cheapest.article.name} offerte (−${fmtEur(cheapest.article.price)}).`);
+}
+
+document.getElementById('btn-free-pizza').addEventListener('click', offerCheapestPizza);
 
 function renderTicket() {
   const el = document.getElementById('ticket-lines');
@@ -448,16 +463,21 @@ function renderTicket() {
     el.innerHTML = '<p class="empty-msg">Aucun article</p>';
   } else {
     ticket.forEach(line => {
+      const free = line.freeUnits || 0;
+      const lineTotal = line.article.price * (line.qty - free);
+      const freeNote = free
+        ? `<span class="tl-free">🎁 ${free} offerte${free > 1 ? 's' : ''} (−${fmtEur(line.article.price * free)})</span>`
+        : '';
       const div = document.createElement('div');
       div.className = 'ticket-line';
       div.innerHTML = `
-        <span class="tl-name">${line.article.emoji} ${line.article.name}</span>
+        <span class="tl-name">${line.article.emoji} ${line.article.name}${freeNote}</span>
         <div class="tl-qty-controls">
           <button class="tl-qty-btn" data-id="${line.article.id}" data-delta="-1">−</button>
           <span class="tl-qty">${line.qty}</span>
           <button class="tl-qty-btn" data-id="${line.article.id}" data-delta="1">+</button>
         </div>
-        <span class="tl-price">${fmtEur(line.article.price * line.qty)}</span>
+        <span class="tl-price">${fmtEur(lineTotal)}</span>
         <button class="tl-remove" data-id="${line.article.id}">✕</button>
       `;
       el.appendChild(div);
@@ -510,11 +530,19 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     const given = parseFloat(document.getElementById('cash-given').value) || 0;
     if (given > 0 && given < total) { showToast('Montant insuffisant.'); return; }
   }
+  // Sépare les unités payées et offertes → l'article offert est enregistré à 0 €
+  const lines = [];
+  ticket.forEach(l => {
+    const free = l.freeUnits || 0;
+    const paid = l.qty - free;
+    if (paid > 0) lines.push({ ...l.article, qty: paid, subtotal: l.article.price * paid });
+    if (free > 0) lines.push({ ...l.article, name: l.article.name + ' (offerte)', price: 0, qty: free, subtotal: 0 });
+  });
   const tx = {
     id:        uid(),
     date:      new Date().toISOString(),
     location:  currentLocation || '',
-    lines:     ticket.map(l => ({ ...l.article, qty: l.qty, subtotal: l.article.price * l.qty })),
+    lines,
     total,
     method:    payMethod,
     cancelled: false,
