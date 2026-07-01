@@ -498,24 +498,31 @@ header {
 .btn-validate:hover { background: var(--olive-light); }
 .btn-validate:active { background: var(--olive); }
 
-.btn-discount {
-  width: 100%;
-  background: #fff4ec;
-  color: var(--terracotta);
-  border: 1.5px dashed var(--terracotta);
-  border-radius: 8px;
-  padding: .55rem;
-  font-size: .9rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: .5rem;
+.ticket-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: .4rem;
   flex-shrink: 0;
-  transition: background .15s;
+}
+.btn-discount {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: var(--terracotta);
+  color: var(--white);
+  border: none;
+  border-radius: 999px;
+  padding: .45rem .9rem;
+  font-size: .85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(137,49,11,.25);
+  transition: background .15s, transform .1s;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-.btn-discount:hover  { background: #ffe8d9; }
-.btn-discount:active { background: #ffdcc6; }
+.btn-discount:hover  { background: var(--terracotta-light, #a5451a); }
+.btn-discount:active { transform: scale(.96); }
 
 .tl-free {
   display: block;
