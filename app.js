@@ -508,7 +508,7 @@ function saveCategoryModal() {
   showToast('Catégories mises à jour.');
 }
 
-document.getElementById('btn-manage-categories').addEventListener('click', openCategoryModal);
+// (l'ouverture de la gestion des catégories se fait via le menu ☰)
 document.getElementById('btn-category-save').addEventListener('click', saveCategoryModal);
 document.getElementById('btn-category-cancel').addEventListener('click', () => {
   document.getElementById('modal-category').classList.remove('open');
@@ -531,20 +531,14 @@ function renderArticles() {
     card.dataset.artId = art.id;
     card.innerHTML = `
       <span class="drag-handle">⠿</span>
-      <button class="article-edit-btn" data-id="${art.id}" title="Modifier">✏️</button>
       <span class="article-emoji">${art.emoji}</span>
       <div class="article-name">${art.name}</div>
       <div class="article-price">${fmtEur(art.price)}</div>
     `;
-    card.addEventListener('click', (e) => {
-      if (editMode) return; // en mode édition, le clic n'ajoute pas au ticket
-      if (e.target.closest('.article-edit-btn')) return;
+    card.addEventListener('click', () => {
+      if (editMode) return; // en mode déplacement, le clic n'ajoute pas au ticket
+      if (pickEditMode) { exitPickEditMode(); openArticleModal(art); return; } // mode « modifier un article »
       addToTicket(art);
-    });
-    card.querySelector('.article-edit-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (editMode) return;
-      openArticleModal(art);
     });
     grid.appendChild(card);
   });
@@ -561,18 +555,72 @@ const drag = {
   offX: 0,  offY: 0,
 };
 
+// Mode « modifier un article » : le prochain article touché ouvre sa fiche.
+let pickEditMode = false;
+
+function showBanner(text) {
+  document.getElementById('edit-banner-text').textContent = text;
+  document.getElementById('edit-banner').classList.add('visible');
+}
+function hideBanner() {
+  document.getElementById('edit-banner').classList.remove('visible');
+}
+
 function toggleEditMode() {
   editMode = !editMode;
-  const btn    = document.getElementById('btn-edit-mode');
-  const grid   = document.getElementById('articles-grid');
-  const banner = document.getElementById('edit-banner');
-  btn.textContent = editMode ? '✅ Terminer' : '✏️ Éditer';
-  btn.classList.toggle('active', editMode);
-  grid.classList.toggle('edit-mode', editMode);
-  banner.classList.toggle('visible', editMode);
+  document.getElementById('articles-grid').classList.toggle('edit-mode', editMode);
+  if (editMode) showBanner('🔀 Faites glisser les articles pour les déplacer, puis touchez « Terminer ».');
+  else hideBanner();
   renderArticles();
 }
-document.getElementById('btn-edit-mode').addEventListener('click', toggleEditMode);
+
+function startPickEditMode() {
+  pickEditMode = true;
+  showBanner('✏️ Touchez l\'article à modifier.');
+}
+function exitPickEditMode() {
+  pickEditMode = false;
+  hideBanner();
+}
+
+// « Terminer » de la bannière : sort du mode en cours
+document.getElementById('btn-banner-done').addEventListener('click', () => {
+  if (editMode) toggleEditMode();
+  if (pickEditMode) exitPickEditMode();
+});
+
+// ── Menu des fonctions ────────────────────────────────────────────────────────
+const menuModal = document.getElementById('modal-menu');
+function closeMenu() { menuModal.classList.remove('open'); }
+
+document.getElementById('btn-menu').addEventListener('click', () => menuModal.classList.add('open'));
+document.getElementById('btn-menu-close').addEventListener('click', closeMenu);
+menuModal.addEventListener('click', e => { if (e.target === menuModal) closeMenu(); });
+
+function goToCaisse() {
+  const btn = document.querySelector('.tab-btn[data-tab="caisse"]');
+  if (!document.getElementById('tab-caisse').classList.contains('active')) btn.click();
+}
+
+document.getElementById('menu-add-article').addEventListener('click', () => {
+  closeMenu(); goToCaisse(); openArticleModal();
+});
+document.getElementById('menu-edit-article').addEventListener('click', () => {
+  closeMenu(); goToCaisse();
+  if (editMode) toggleEditMode();
+  startPickEditMode();
+});
+document.getElementById('menu-reorder').addEventListener('click', () => {
+  closeMenu(); goToCaisse();
+  exitPickEditMode();
+  if (!editMode) toggleEditMode();
+});
+document.getElementById('menu-categories').addEventListener('click', () => {
+  closeMenu(); openCategoryModal();
+});
+document.getElementById('menu-pin').addEventListener('click', () => {
+  closeMenu(); openPinModal();
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function dragGetCardAt(grid, x, y) {
