@@ -224,6 +224,7 @@ function insightLines(tk, ln) {
 function createAllSheets(ss) {
   const stats = computeStats(readValidatedRows(ss));
   sheetCAParJour(ss, stats);
+  sheetPizzasParJour(ss, stats);
   sheetCAParCategorie(ss, stats);
   sheetCAParArticle(ss, stats);
   sheetParHeure(ss, stats);
@@ -254,6 +255,39 @@ function sheetCAParJour(ss, stats) {
   writeTable(s, "CHIFFRE D'AFFAIRES PAR JOUR", '#76894F',
     ['Date','Nb tickets','Nb articles','CA total (€)','CA Espèces (€)','CA Carte (€)','Ticket moyen (€)'],
     rows, [120,90,100,120,120,120,120]);
+}
+
+// Nombre de pizzas vendues par jour, en distinguant petites et grandes.
+// Détection : catégorie contenant « petite »/« grande », sinon suffixe (P)/(G) du nom.
+function sheetPizzasParJour(ss, stats) {
+  const s = ensureSheet(ss, '🍕 Pizzas par Jour', '📅 CA par Jour');
+  const byDay = {}; // dKey -> {label, petites, grandes}
+  stats.lines.forEach(l => {
+    const cat = String(l.cat || ''), name = String(l.art || '');
+    let size = /petite/i.test(cat) ? 'p' : /grande/i.test(cat) ? 'g' : null;
+    if (!size) { if (/\(p\)\s*$/i.test(name)) size = 'p'; else if (/\(g\)\s*$/i.test(name)) size = 'g'; }
+    if (!size) return; // pas une pizza
+    const g = byDay[l.dKey] || (byDay[l.dKey] = { label: dayLabel(l.date), petites: 0, grandes: 0 });
+    if (size === 'p') g.petites += l.qty; else g.grandes += l.qty;
+  });
+
+  const keys = Object.keys(byDay).sort().reverse();
+  const rows = keys.map(k => {
+    const g = byDay[k];
+    return [g.label, g.petites, g.grandes, g.petites + g.grandes];
+  });
+  // Ligne total en bas
+  if (rows.length) {
+    const tp = keys.reduce((a, k) => a + byDay[k].petites, 0);
+    const tg = keys.reduce((a, k) => a + byDay[k].grandes, 0);
+    rows.push(['TOTAL', tp, tg, tp + tg]);
+  }
+  writeTable(s, 'PIZZAS VENDUES PAR JOUR', '#89310B',
+    ['Date', 'Pizzas petites', 'Pizzas grandes', 'Total pizzas'],
+    rows, [130, 130, 130, 130]);
+  if (rows.length) { // met la ligne TOTAL en gras
+    s.getRange(2 + rows.length, 1, 1, 4).setFontWeight('bold').setBackground('#f4f6ee');
+  }
 }
 
 function sheetCAParCategorie(ss, stats) {
