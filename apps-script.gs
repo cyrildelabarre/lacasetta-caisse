@@ -128,10 +128,13 @@ function computeStats(rows) {
         date:  asDate(r[COL.date]),
         dKey:  dayKey(r[COL.date]),
         hour:  Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH'),
+        time:  Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH:mm'),
+        nbArt: 0,
         cats:  {}
       };
     }
     tickets[id].cats[String(r[COL.cat] || '')] = true; // catégories présentes dans la vente
+    tickets[id].nbArt += Number(r[COL.qty]) || 0;
   });
 
   return { lines, tickets: Object.values(tickets), ticketMap: tickets };
@@ -489,8 +492,47 @@ function sheetRecommandations(ss, stats) {
 //  EMAIL HEBDOMADAIRE
 // ════════════════════════════════════════════
 
-// Destinataires du récap (séparés par des virgules).
-const REPORT_EMAIL = 'cyril.delabarre@hotmail.com, clemence.bailly89@gmail.com, bastian.iragne@gmail.com';
+// ─────────────────────────────────────────────────────────────────────────────
+//  DESTINATAIRES & SECTIONS DES E-MAILS RÉCAP (quotidien + hebdo)
+//
+//  Chaque destinataire reçoit SON e-mail, composé uniquement des sections
+//  mises à true. Mets false pour masquer une section chez ce destinataire.
+//  (Une clé absente = section affichée.)
+//
+//  Sections disponibles (dans l'ordre d'affichage) :
+//   kpis             tuiles CA / ventes / ticket moyen / articles
+//   paiements        espèces vs carte
+//   caParJour        CA + ventes par jour
+//   articlesParJour  nb d'articles vendus par jour
+//   pizzasParJour    pizzas petites / grandes par jour
+//   parHeure         CA et ventes par heure (pic surligné)
+//   categories       CA par catégorie
+//   emplacement      CA par emplacement
+//   starParCategorie article le plus vendu de chaque catégorie
+//   topArticles      top 5 articles (CA)
+//   flopArticles     articles les moins vendus (hors offerts)
+//   attachement      taux d'attachement boisson / dessert / supplément
+//   panierMoyen      panier moyen par tranche horaire et taille de commande
+//   ventesDetail     liste des ventes (heure, articles, paiement, montant)
+//   recommandations  insights et astuces
+// ─────────────────────────────────────────────────────────────────────────────
+const RECIPIENTS = [
+  { email: 'cyril.delabarre@hotmail.com', sections: {
+      kpis: true, paiements: true, caParJour: true, articlesParJour: true,
+      pizzasParJour: true, parHeure: true, categories: true, emplacement: true,
+      starParCategorie: true, topArticles: true, flopArticles: true,
+      attachement: true, panierMoyen: true, ventesDetail: true, recommandations: true } },
+  { email: 'clemence.bailly89@gmail.com', sections: {
+      kpis: true, paiements: true, caParJour: true, articlesParJour: true,
+      pizzasParJour: true, parHeure: true, categories: true, emplacement: true,
+      starParCategorie: true, topArticles: true, flopArticles: true,
+      attachement: true, panierMoyen: true, ventesDetail: true, recommandations: true } },
+  { email: 'bastian.iragne@gmail.com', sections: {
+      kpis: true, paiements: true, caParJour: true, articlesParJour: true,
+      pizzasParJour: true, parHeure: true, categories: true, emplacement: true,
+      starParCategorie: true, topArticles: true, flopArticles: true,
+      attachement: true, panierMoyen: true, ventesDetail: true, recommandations: true } },
+];
 
 // Récap hebdo (7 derniers jours).
 function sendWeeklyReport() {
@@ -544,8 +586,9 @@ function buildAndSendReport(tk, ln, opts) {
   const periode = opts.periode;
 
   if (!tk.length) {
-    MailApp.sendEmail({ to: REPORT_EMAIL, subject: `🍕 La Casetta — ${opts.emptyKind} (${periode})`,
-      htmlBody: `<p>Bonjour,</p><p>Aucune vente enregistrée sur la période <b>${periode}</b>.</p>` });
+    RECIPIENTS.forEach(r => MailApp.sendEmail({ to: r.email,
+      subject: `🍕 La Casetta — ${opts.emptyKind} (${periode})`,
+      htmlBody: `<p>Bonjour,</p><p>Aucune vente enregistrée sur la période <b>${periode}</b>.</p>` }));
     return;
   }
 
@@ -563,9 +606,57 @@ function buildAndSendReport(tk, ln, opts) {
     const d=byDay[t.dKey]||(byDay[t.dKey]={label:dayLabel(t.date),ca:0,n:0}); d.ca+=t.total; d.n++;
     add(byLoc, t.loc, t.total);
   });
-  const topArts = sortDescByVal(artCA).slice(0,5);
+  const topAll  = sortDescByVal(artCA);
+  const topArts = topAll.slice(0,5);
+  const flopArts = topAll.filter(e => !/\(offert/i.test(e[0])).slice(-5).reverse();
   const locRows = sortDescByVal(byLoc);
   const dayRows = Object.keys(byDay).sort().map(k=>byDay[k]);
+
+  // Articles vendus par jour + pizzas petites/grandes par jour
+  const artDay = {}, pizzaDay = {};
+  ln.forEach(l => {
+    const g = artDay[l.dKey] || (artDay[l.dKey] = { label: dayLabel(l.date), qty: 0 });
+    g.qty += l.qty;
+    const cat = String(l.cat||''), name = String(l.art||'');
+    let size = /petite/i.test(cat) ? 'p' : /grande/i.test(cat) ? 'g' : null;
+    if (!size) { if (/\(p\)\s*$/i.test(name)) size='p'; else if (/\(g\)\s*$/i.test(name)) size='g'; }
+    if (size) {
+      const pz = pizzaDay[l.dKey] || (pizzaDay[l.dKey] = { label: dayLabel(l.date), p: 0, g: 0 });
+      pz[size] += l.qty;
+    }
+  });
+  const artDayRows   = Object.keys(artDay).sort().map(k=>artDay[k]);
+  const pizzaDayRows = Object.keys(pizzaDay).sort().map(k=>pizzaDay[k]);
+
+  // CA / ventes par heure (pic surligné)
+  const byHour = {};
+  tk.forEach(t => { const h=byHour[t.hour]||(byHour[t.hour]={n:0,ca:0}); h.n++; h.ca+=t.total; });
+  const hourKeys = Object.keys(byHour).sort();
+  const peakHourCA = Math.max.apply(null, hourKeys.map(h=>byHour[h].ca));
+
+  // CA par catégorie
+  const catQty = {}, catCA2 = {};
+  ln.forEach(l => { add(catQty, l.cat, l.qty); add(catCA2, l.cat, l.sub); });
+  const catRows = sortDescByVal(catCA2);
+
+  // Panier moyen : par tranche horaire et par taille de commande
+  const tranches = [
+    { label:'Matin (8h–12h)',      lo:8,  hi:12, sum:0, n:0 },
+    { label:'Midi (12h–14h)',      lo:12, hi:14, sum:0, n:0 },
+    { label:'Après-midi (14h–18h)',lo:14, hi:18, sum:0, n:0 },
+    { label:'Soir (18h–23h)',      lo:18, hi:23, sum:0, n:0 },
+  ];
+  const tailles = { '1 article':{sum:0,n:0}, '2–3 articles':{sum:0,n:0}, '4+ articles':{sum:0,n:0} };
+  tk.forEach(t => {
+    const h = Number(t.hour);
+    tranches.forEach(tr => { if (h >= tr.lo && h < tr.hi) { tr.sum += t.total; tr.n++; } });
+    const key = t.nbArt === 1 ? '1 article' : t.nbArt <= 3 ? '2–3 articles' : '4+ articles';
+    tailles[key].sum += t.total; tailles[key].n++;
+  });
+
+  // Liste des ventes (plafonnée à 30 lignes)
+  const ventes = tk.slice().sort((a,b)=>b.date-a.date);
+  const ventesShown = ventes.slice(0,30);
 
   // Article star (le plus vendu en quantité) par catégorie
   const byCatArt = {}; // cat -> { art -> {qty, ca} }
@@ -592,7 +683,8 @@ function buildAndSendReport(tk, ln, opts) {
     return { label:d.label, n:n, pct:p, oneIn:oneIn };
   });
 
-  // ── HTML ──
+  // ── HTML : chaque section est générée séparément puis assemblée
+  //          selon la configuration de chaque destinataire (RECIPIENTS) ──
   const C = { brand:'#89310B', green:'#76894F', bg:'#faf7f4', line:'#e7ddd6' };
   const kpi = (label,val) =>
     `<td style="padding:14px;background:#fff;border:1px solid ${C.line};border-radius:10px;text-align:center;width:25%">
@@ -600,6 +692,8 @@ function buildAndSendReport(tk, ln, opts) {
        <div style="font-size:12px;color:#888;margin-top:4px">${label}</div></td>`;
   const th = t => `<th align="left" style="padding:8px 10px;background:${C.green};color:#fff;font-size:13px">${t}</th>`;
   const td = (v,b)=>`<td style="padding:8px 10px;border-bottom:1px solid ${C.line};font-size:13px${b?';font-weight:700':''}">${v}</td>`;
+  const tbl = inner => `<table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">${inner}</table>`;
+  const sec = (title, inner) => `<h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">${title}</h3>` + inner;
 
   // Recommandations (mêmes insights que la feuille, sur la semaine écoulée)
   const recoHtml = insightLines(tk, ln).map(line => {
@@ -610,70 +704,101 @@ function buildAndSendReport(tk, ln, opts) {
     return `<div style="font-size:13px;margin:3px 0;color:#333">${line}</div>`;
   }).join('');
 
-  const html = `
+  const S = {};
+  S.kpis = `<table width="100%" cellspacing="8" cellpadding="0"><tr>
+        ${kpi('CA total', fmt(caTot))}${kpi('Ventes', nbTk)}${kpi('Ticket moyen', fmt(ticketMoy))}${kpi('Articles vendus', nbArt)}
+      </tr></table>`;
+
+  S.paiements = sec('💳 Paiements', tbl(
+    `<tr>${th('Mode')}${th('Montant')}${th('Part')}</tr>
+     <tr>${td('💶 Espèces')}${td(fmt(caEsp))}${td(pct(caEsp,caTot))}</tr>
+     <tr>${td('💳 Carte')}${td(fmt(caCarte))}${td(pct(caCarte,caTot))}</tr>`));
+
+  S.caParJour = sec('📅 CA par jour', tbl(
+    `<tr>${th('Jour')}${th('Ventes')}${th('CA')}</tr>` +
+    dayRows.map(d=>`<tr>${td(d.label)}${td(d.n)}${td(fmt(d.ca),true)}</tr>`).join('')));
+
+  S.articlesParJour = sec('📦 Articles vendus par jour', tbl(
+    `<tr>${th('Jour')}${th('Nb articles')}</tr>` +
+    artDayRows.map(d=>`<tr>${td(d.label)}${td(d.qty,true)}</tr>`).join('') +
+    `<tr style="background:#f4f6ee">${td('TOTAL',true)}${td(nbArt,true)}</tr>`));
+
+  S.pizzasParJour = pizzaDayRows.length ? sec('🍕 Pizzas par jour', tbl(
+    `<tr>${th('Jour')}${th('Petites')}${th('Grandes')}${th('Total')}</tr>` +
+    pizzaDayRows.map(d=>`<tr>${td(d.label)}${td(d.p)}${td(d.g)}${td(d.p+d.g,true)}</tr>`).join(''))) : '';
+
+  S.parHeure = sec('⏰ Par heure', tbl(
+    `<tr>${th('Heure')}${th('Ventes')}${th('CA')}</tr>` +
+    hourKeys.map(h => {
+      const v = byHour[h], peak = v.ca === peakHourCA;
+      return `<tr${peak?' style="background:#fff4ec"':''}>${td((peak?'🔥 ':'')+h+'h',peak)}${td(v.n)}${td(fmt(v.ca),peak)}</tr>`;
+    }).join('')));
+
+  S.categories = sec('🗂 CA par catégorie', tbl(
+    `<tr>${th('Catégorie')}${th('Qté')}${th('CA')}${th('Part')}</tr>` +
+    catRows.map(([cat,ca])=>`<tr>${td(cat)}${td(catQty[cat])}${td(fmt(ca),true)}${td(pct(ca,caTot))}</tr>`).join('')));
+
+  S.emplacement = sec('📍 CA par emplacement', tbl(
+    `<tr>${th('Emplacement')}${th('CA')}${th('Part')}</tr>` +
+    locRows.map(([l,c])=>`<tr>${td('📍 '+l)}${td(fmt(c),true)}${td(pct(c,caTot))}</tr>`).join('')));
+
+  S.starParCategorie = sec('🏅 Article star par catégorie', tbl(
+    `<tr>${th('Catégorie')}${th('Article')}${th('Qté')}${th('CA')}</tr>` +
+    catStars.map(s=>`<tr>${td(s.cat)}${td(s.art,true)}${td(s.qty)}${td(fmt(s.ca))}</tr>`).join('')));
+
+  S.topArticles = sec('🏆 Top articles', tbl(
+    `<tr>${th('Article')}${th('Qté')}${th('CA')}</tr>` +
+    topArts.map(([a,c])=>`<tr>${td(a)}${td(artQty[a])}${td(fmt(c),true)}</tr>`).join('')));
+
+  S.flopArticles = flopArts.length ? sec('📉 Articles les moins vendus', tbl(
+    `<tr>${th('Article')}${th('Qté')}${th('CA')}</tr>` +
+    flopArts.map(([a,c])=>`<tr>${td(a)}${td(artQty[a])}${td(fmt(c))}</tr>`).join(''))) : '';
+
+  S.attachement = sec('🧲 Taux d\'attachement', tbl(
+    `<tr>${th('Catégorie')}${th('Ventes avec')}${th('Taux')}${th('En moyenne')}</tr>` +
+    attach.map(a=>`<tr>${td(a.label)}${td(a.n+' / '+nbTk)}${td(a.pct+'%',true)}${td(a.oneIn?('1 client sur '+String(a.oneIn).replace('.',',')):'—')}</tr>`).join('')));
+
+  const trRows = tranches.filter(t=>t.n).map(t=>`<tr>${td(t.label)}${td(fmt(t.sum/t.n),true)}${td(t.n)}</tr>`).join('');
+  const taRows = Object.keys(tailles).filter(k=>tailles[k].n).map(k=>`<tr>${td(k)}${td(fmt(tailles[k].sum/tailles[k].n),true)}${td(tailles[k].n)}</tr>`).join('');
+  S.panierMoyen = sec('🛒 Panier moyen', tbl(
+    `<tr>${th('Tranche horaire')}${th('Panier moy.')}${th('Ventes')}</tr>` + trRows) +
+    '<div style="height:8px"></div>' + tbl(
+    `<tr>${th('Taille commande')}${th('Panier moy.')}${th('Ventes')}</tr>` + taRows));
+
+  S.ventesDetail = sec(`🧾 Ventes (${nbTk})`, tbl(
+    `<tr>${th('Heure')}${th('Articles')}${th('Paiement')}${th('Emplacement')}${th('Total')}</tr>` +
+    ventesShown.map(t=>`<tr>${td(dayLabel(t.date)+' '+t.time)}${td(t.nbArt)}${td(t.pay)}${td(t.loc)}${td(fmt(t.total),true)}</tr>`).join('')) +
+    (ventes.length > 30 ? `<p style="font-size:12px;color:#999">… et ${ventes.length-30} autres ventes (voir le Google Sheet).</p>` : ''));
+
+  S.recommandations = `<h3 style="color:${C.brand};margin:26px 0 4px;font-size:16px">💡 ${opts.recoTitle}</h3>
+      <div style="background:#fff;border:1px solid ${C.line};border-radius:8px;padding:12px 16px">${recoHtml}</div>`;
+
+  const ORDER = ['kpis','paiements','caParJour','articlesParJour','pizzasParJour','parHeure',
+                 'categories','emplacement','starParCategorie','topArticles','flopArticles',
+                 'attachement','panierMoyen','ventesDetail','recommandations'];
+
+  const wrap = inner => `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:auto;background:${C.bg};padding:0 0 24px;border-radius:12px;overflow:hidden">
     <div style="background:${C.brand};color:#fff;padding:22px 24px">
       <div style="font-size:20px;font-weight:800">🍕 La Casetta — ${opts.titleLabel}</div>
       <div style="opacity:.85;font-size:13px;margin-top:4px">${periode}</div>
     </div>
     <div style="padding:20px 24px">
-      <table width="100%" cellspacing="8" cellpadding="0"><tr>
-        ${kpi('CA total', fmt(caTot))}${kpi('Ventes', nbTk)}${kpi('Ticket moyen', fmt(ticketMoy))}${kpi('Articles vendus', nbArt)}
-      </tr></table>
-
-      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">💳 Paiements</h3>
-      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Mode')}${th('Montant')}${th('Part')}</tr>
-        <tr>${td('💶 Espèces')}${td(fmt(caEsp))}${td(pct(caEsp,caTot))}</tr>
-        <tr>${td('💳 Carte')}${td(fmt(caCarte))}${td(pct(caCarte,caTot))}</tr>
-      </table>
-
-      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🏅 Article star par catégorie</h3>
-      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Catégorie')}${th('Article')}${th('Qté')}${th('CA')}</tr>
-        ${catStars.map(s=>`<tr>${td(s.cat)}${td(s.art,true)}${td(s.qty)}${td(fmt(s.ca))}</tr>`).join('')}
-      </table>
-
-      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🧲 Taux d'attachement</h3>
-      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Catégorie')}${th('Ventes avec')}${th('Taux')}${th('En moyenne')}</tr>
-        ${attach.map(a=>`<tr>${td(a.label)}${td(a.n+' / '+nbTk)}${td(a.pct+'%',true)}${td(a.oneIn?('1 client sur '+String(a.oneIn).replace('.',',')):'—')}</tr>`).join('')}
-      </table>
-
-      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🏆 Top articles</h3>
-      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Article')}${th('Qté')}${th('CA')}</tr>
-        ${topArts.map(([a,c])=>`<tr>${td(a)}${td(artQty[a])}${td(fmt(c),true)}</tr>`).join('')}
-      </table>
-
-      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">📍 CA par emplacement</h3>
-      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Emplacement')}${th('CA')}${th('Part')}</tr>
-        ${locRows.map(([l,c])=>`<tr>${td('📍 '+l)}${td(fmt(c),true)}${td(pct(c,caTot))}</tr>`).join('')}
-      </table>
-
-      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">📅 Détail par jour</h3>
-      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Jour')}${th('Tickets')}${th('CA')}</tr>
-        ${dayRows.map(d=>`<tr>${td(d.label)}${td(d.n)}${td(fmt(d.ca),true)}</tr>`).join('')}
-      </table>
-
-      <h3 style="color:${C.brand};margin:26px 0 4px;font-size:16px">💡 ${opts.recoTitle}</h3>
-      <div style="background:#fff;border:1px solid ${C.line};border-radius:8px;padding:12px 16px">
-        ${recoHtml}
-      </div>
-
+      ${inner}
       <p style="font-size:12px;color:#999;margin-top:24px">
-        Détails complets et recommandations dans ton Google Sheet «&nbsp;La Casetta — Caisse&nbsp;».<br>
+        Détails complets dans ton Google Sheet «&nbsp;La Casetta — Caisse&nbsp;».<br>
         ${opts.whenText}
       </p>
     </div>
   </div>`;
 
-  MailApp.sendEmail({
-    to: REPORT_EMAIL,
-    subject: `🍕 La Casetta — ${opts.subjectKind} : ${fmt(caTot)} · ${nbTk} vente${nbTk > 1 ? 's' : ''} (${periode})`,
-    htmlBody: html
+  const subject = `🍕 La Casetta — ${opts.subjectKind} : ${fmt(caTot)} · ${nbTk} vente${nbTk > 1 ? 's' : ''} (${periode})`;
+
+  // Un e-mail par destinataire, composé uniquement de SES sections activées
+  RECIPIENTS.forEach(rcpt => {
+    const cfg = rcpt.sections || {};
+    const inner = ORDER.filter(k => cfg[k] !== false && S[k]).map(k => S[k]).join('');
+    MailApp.sendEmail({ to: rcpt.email, subject: subject, htmlBody: wrap(inner) });
   });
 }
 
