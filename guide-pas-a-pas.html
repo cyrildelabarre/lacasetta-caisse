@@ -1,0 +1,152 @@
+<style>
+  :root{
+    --ground:#FAF5EF; --surface:#FFFFFF; --surface-2:#F3EBDF; --chip:#F5EDE3;
+    --ink:#241E1A; --muted:#8A7B6E; --hair:#E7DCCC;
+    --clay:#A5451A; --clay-ink:#8A3A14; --olive:#5E6F2D; --gold:#B87A1E; --danger:#B4472F;
+    --serif:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#15100E; --surface:#201915; --surface-2:#241C17; --chip:#2C221B;
+    --ink:#F1E7DB; --muted:#A99A8C; --hair:#372B23;
+    --clay:#E0743E; --clay-ink:#F0B492; --olive:#A7BB74; --gold:#E0A852; --danger:#E68A6E;
+  }}
+  :root[data-theme="light"]{--ground:#FAF5EF;--surface:#FFF;--surface-2:#F3EBDF;--chip:#F5EDE3;--ink:#241E1A;--muted:#8A7B6E;--hair:#E7DCCC;--clay:#A5451A;--clay-ink:#8A3A14;--olive:#5E6F2D;--gold:#B87A1E;--danger:#B4472F;}
+  :root[data-theme="dark"]{--ground:#15100E;--surface:#201915;--surface-2:#241C17;--chip:#2C221B;--ink:#F1E7DB;--muted:#A99A8C;--hair:#372B23;--clay:#E0743E;--clay-ink:#F0B492;--olive:#A7BB74;--gold:#E0A852;--danger:#E68A6E;}
+
+  *{box-sizing:border-box}
+  .doc{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.55;padding:clamp(20px,4vw,44px);-webkit-font-smoothing:antialiased}
+  .head{border-bottom:2px solid var(--clay);padding-bottom:18px;margin-bottom:14px}
+  .brand{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--clay);font-weight:700;margin:0}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4.5vw,42px);line-height:1.03;margin:.25em 0 .1em;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;margin:0;max-width:56ch}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 30px}
+  .toc a{font-size:12.5px;text-decoration:none;color:var(--clay-ink);background:var(--chip);border:1px solid var(--hair);border-radius:999px;padding:5px 12px}
+
+  .task{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:20px 22px;margin-bottom:20px;break-inside:avoid}
+  .task h2{font-family:var(--serif);font-size:21px;font-weight:600;margin:0 0 2px;display:flex;align-items:center;gap:12px}
+  .task h2 .ic{width:34px;height:34px;flex:none;border-radius:9px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .task .when{font-size:12.5px;color:var(--muted);margin:0 0 16px 46px}
+
+  ol{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  ol li{counter-increment:s;display:flex;gap:14px;align-items:flex-start}
+  ol li::before{content:counter(s);flex:none;width:26px;height:26px;border-radius:50%;background:var(--clay);color:#fff;
+    font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px;font-variant-numeric:tabular-nums}
+  ol li .txt{font-size:14px;padding-top:2px}
+  ol li .txt b{font-weight:600}
+  .chip{display:inline-block;background:var(--chip);border:1px solid var(--hair);border-radius:6px;padding:1px 8px;font-size:13px;font-weight:600;color:var(--clay-ink);white-space:nowrap}
+  .note{margin-top:14px;font-size:12.5px;color:var(--olive);background:var(--surface-2);border-left:3px solid var(--olive);border-radius:0 8px 8px 0;padding:8px 12px}
+  .warn{border-left-color:var(--danger);color:var(--danger)}
+
+  .foot{margin-top:22px;padding-top:14px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--muted)}
+  @media print{
+    :root{--ground:#fff;--surface:#fff;--surface-2:#F4EDE3;--ink:#231D19;--muted:#6B5F54;--hair:#D8CCBD;--clay:#93400F;--clay-ink:#7A3410;--chip:#F4EDE3}
+    @page{margin:11mm}.doc{padding:0}.task{break-inside:avoid}.toc{display:none}
+    ol li::before,.task h2 .ic{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style>
+
+<div class="doc">
+  <header class="head">
+    <p class="brand">🍕 La Casetta · Caisse</p>
+    <h1>Guide pas à pas</h1>
+    <p class="sub">Les gestes du quotidien, expliqués simplement — pour la personne qui prend les commandes.</p>
+  </header>
+
+  <nav class="toc">
+    <a href="#t1">1 · Démarrer le service</a>
+    <a href="#t2">2 · Encaisser une commande</a>
+    <a href="#t3">3 · Offrir une pizza</a>
+    <a href="#t4">4 · Ajouter après paiement</a>
+    <a href="#t5">5 · Corriger une erreur</a>
+    <a href="#t6">6 · Voir les ventes du jour</a>
+    <a href="#t7">7 · Fin de service</a>
+  </nav>
+
+  <section class="task" id="t1">
+    <h2><span class="ic">🔓</span> 1 · Démarrer le service</h2>
+    <p class="when">En arrivant sur l'emplacement, avant la première commande.</p>
+    <ol>
+      <li><span class="txt">Ouvre l'application sur l'iPad.</span></li>
+      <li><span class="txt">Saisis le <b>code PIN</b> à 4 chiffres.</span></li>
+      <li><span class="txt">Vérifie l'<b>emplacement</b> en haut à droite <span class="chip">📍</span>. Il s'affiche automatiquement selon le jour.</span></li>
+      <li><span class="txt">S'il est faux (événement, changement) : touche <span class="chip">📍</span>, choisis le bon lieu ou saisis-le, puis <span class="chip">Valider</span>.</span></li>
+    </ol>
+    <p class="note">L'emplacement s'enregistre sur chaque vente — utile pour savoir quel lieu rapporte le plus.</p>
+  </section>
+
+  <section class="task" id="t2">
+    <h2><span class="ic">🧾</span> 2 · Encaisser une commande</h2>
+    <p class="when">Le geste principal, à chaque client.</p>
+    <ol>
+      <li><span class="txt"><b>Touche les articles</b> commandés dans le catalogue — ils s'ajoutent au panier à droite.</span></li>
+      <li><span class="txt">Pour <b>plusieurs fois le même</b> : touche-le plusieurs fois, ou utilise <span class="chip">＋</span> / <span class="chip">−</span> sur la ligne.</span></li>
+      <li><span class="txt">Choisis le paiement : <span class="chip">💶 Espèces</span> ou <span class="chip">💳 Carte</span>.</span></li>
+      <li><span class="txt"><b>Si espèces :</b> saisis le <b>montant remis</b> par le client → le <b>rendu</b> s'affiche automatiquement.</span></li>
+      <li><span class="txt">Touche <span class="chip">✔ Valider le paiement</span>. La vente est enregistrée. Le panier se vide pour le client suivant.</span></li>
+    </ol>
+    <p class="note">Le total se met à jour en direct à chaque article ajouté.</p>
+  </section>
+
+  <section class="task" id="t3">
+    <h2><span class="ic">🎁</span> 3 · Offrir une pizza ou un article</h2>
+    <p class="when">Geste commercial, client fidèle, petit dédommagement…</p>
+    <ol>
+      <li><span class="txt"><b>La pizza la moins chère offerte :</b> touche <span class="chip">🍕 Fidélité</span> — elle passe à 0 € automatiquement.</span></li>
+      <li><span class="txt"><b>Choisir soi-même :</b> touche <span class="chip">🎁 Offrir</span> (le bouton devient vert).</span></li>
+      <li><span class="txt">Touche les <b>articles à offrir</b> dans le panier → ils passent à 0 €.</span></li>
+      <li><span class="txt">Retouche un article pour annuler l'offre, ou re-touche <span class="chip">🎁 Offrir</span> pour sortir du mode.</span></li>
+      <li><span class="txt">Encaisse normalement le reste.</span></li>
+    </ol>
+    <p class="note">Les articles offerts restent enregistrés (à 0 €) : tu sauras combien tu as offert.</p>
+  </section>
+
+  <section class="task" id="t4">
+    <h2><span class="ic">🔁</span> 4 · Le client ajoute quelque chose après avoir payé</h2>
+    <p class="when">Il revient prendre un dessert, une boisson…</p>
+    <ol>
+      <li><span class="txt">Va dans l'onglet <span class="chip">Mémo du jour</span>.</span></li>
+      <li><span class="txt">Retrouve sa vente et touche le bouton <span class="chip">🔁</span>.</span></li>
+      <li><span class="txt">Un bandeau rappelle ce qu'il a <b>déjà payé</b>. Ajoute les <b>nouveaux articles</b> au panier.</span></li>
+      <li><span class="txt">Touche <span class="chip">✔ Encaisser le complément</span> — seul le <b>montant des nouveaux articles</b> est demandé.</span></li>
+    </ol>
+    <p class="note">La commande d'origine n'est pas touchée. Le complément peut être payé autrement (espèces même si la pizza était en carte).</p>
+  </section>
+
+  <section class="task" id="t5">
+    <h2><span class="ic">✏️</span> 5 · Corriger une erreur de saisie</h2>
+    <p class="when">Avant de valider le paiement.</p>
+    <ol>
+      <li><span class="txt"><b>Trop d'un article :</b> touche <span class="chip">−</span> sur sa ligne pour baisser la quantité.</span></li>
+      <li><span class="txt"><b>Retirer un article :</b> touche la croix <span class="chip">✕</span> au bout de sa ligne.</span></li>
+      <li><span class="txt"><b>Tout recommencer :</b> touche <span class="chip">Vider</span> en haut du panier.</span></li>
+    </ol>
+    <p class="note warn">Une fois le paiement validé, corrige plutôt via « Ajouter après paiement » (étape 4) ou signale-le au responsable.</p>
+  </section>
+
+  <section class="task" id="t6">
+    <h2><span class="ic">📅</span> 6 · Voir les ventes du jour</h2>
+    <p class="when">Contrôler la caisse, à tout moment.</p>
+    <ol>
+      <li><span class="txt">Ouvre l'onglet <span class="chip">Mémo du jour</span>.</span></li>
+      <li><span class="txt">En haut : le <b>récap</b> — nombre de tickets, CA, total espèces, total carte.</span></li>
+      <li><span class="txt">En dessous : la <b>liste de chaque vente</b> (heure, articles, paiement, montant).</span></li>
+      <li><span class="txt">Change la <b>date</b> pour consulter un autre jour.</span></li>
+    </ol>
+    <p class="note">Pour une vue en graphiques, va dans <span class="chip">📊 Tableau</span>.</p>
+  </section>
+
+  <section class="task" id="t7">
+    <h2><span class="ic">🔒</span> 7 · Fin de service</h2>
+    <p class="when">En quittant l'emplacement.</p>
+    <ol>
+      <li><span class="txt">Vérifie le récap du jour dans <span class="chip">Mémo du jour</span> (facultatif).</span></li>
+      <li><span class="txt">Touche <span class="chip">🔒</span> en haut à droite pour <b>verrouiller</b> la caisse.</span></li>
+    </ol>
+    <p class="note">Les ventes se synchronisent automatiquement quand il y a du réseau — rien d'autre à faire.</p>
+  </section>
+
+  <footer class="foot">
+    📌 Guide utilisateur · La Casetta · mis à jour à chaque nouvelle fonctionnalité. Imprime-le (Ctrl/Cmd + P) pour l'afficher dans le camion.
+  </footer>
+</div>

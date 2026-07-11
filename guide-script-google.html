@@ -1,0 +1,135 @@
+<style>
+  :root{
+    --ground:#FAF5EF; --surface:#FFFFFF; --surface-2:#F3EBDF; --chip:#F5EDE3;
+    --ink:#241E1A; --muted:#8A7B6E; --hair:#E7DCCC;
+    --clay:#A5451A; --clay-ink:#8A3A14; --olive:#5E6F2D; --gold:#9A6410; --blue:#2B5A7A; --red:#B4472F;
+    --serif:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#15100E; --surface:#201915; --surface-2:#241C17; --chip:#2C221B;
+    --ink:#F1E7DB; --muted:#A99A8C; --hair:#372B23;
+    --clay:#E0743E; --clay-ink:#F0B492; --olive:#A7BB74; --gold:#E0A852; --blue:#7FB2D4; --red:#E68A6E;
+  }}
+  :root[data-theme="light"]{--ground:#FAF5EF;--surface:#FFF;--surface-2:#F3EBDF;--chip:#F5EDE3;--ink:#241E1A;--muted:#8A7B6E;--hair:#E7DCCC;--clay:#A5451A;--clay-ink:#8A3A14;--olive:#5E6F2D;--gold:#9A6410;--blue:#2B5A7A;--red:#B4472F;}
+  :root[data-theme="dark"]{--ground:#15100E;--surface:#201915;--surface-2:#241C17;--chip:#2C221B;--ink:#F1E7DB;--muted:#A99A8C;--hair:#372B23;--clay:#E0743E;--clay-ink:#F0B492;--olive:#A7BB74;--gold:#E0A852;--blue:#7FB2D4;--red:#E68A6E;}
+
+  *{box-sizing:border-box}
+  .doc{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.55;padding:clamp(20px,4vw,44px);-webkit-font-smoothing:antialiased}
+  .head{border-bottom:2px solid var(--clay);padding-bottom:18px;margin-bottom:24px}
+  .brand{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--clay);font-weight:700;margin:0}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(27px,4.4vw,40px);line-height:1.04;margin:.25em 0 .12em;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;margin:0;max-width:60ch}
+
+  .how{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:18px 22px;margin-bottom:20px;break-inside:avoid}
+  .how h2{font-family:var(--serif);font-size:19px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:10px}
+  .how h2 .ic{width:32px;height:32px;flex:none;border-radius:9px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:17px}
+  ol{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+  ol li{counter-increment:s;display:flex;gap:13px;align-items:flex-start}
+  ol li::before{content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;background:var(--clay);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  ol li .txt{font-size:14px;padding-top:1px}
+  .k{display:inline-block;background:var(--chip);border:1px solid var(--hair);border-radius:6px;padding:1px 7px;font-size:13px;font-weight:600;color:var(--clay-ink);white-space:nowrap}
+  code,.fn{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);border:1px solid var(--hair);border-radius:5px;padding:1px 6px;color:var(--clay-ink);white-space:nowrap}
+
+  .sec-title{font-family:var(--serif);font-size:17px;font-weight:600;margin:26px 0 10px;display:flex;align-items:center;gap:10px}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:2px 9px}
+  .b-once{background:color-mix(in srgb,var(--olive) 18%,transparent);color:var(--olive)}
+  .b-need{background:color-mix(in srgb,var(--clay) 16%,transparent);color:var(--clay-ink)}
+  .b-test{background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--blue)}
+  .b-auto{background:color-mix(in srgb,var(--gold) 20%,transparent);color:var(--gold)}
+  .b-int{background:color-mix(in srgb,var(--muted) 22%,transparent);color:var(--muted)}
+
+  .fns{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+  .fn-card{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:14px 16px;break-inside:avoid}
+  .fn-card .name{font-family:var(--mono);font-size:13.5px;font-weight:700;color:var(--clay-ink)}
+  .fn-card .role{font-size:13px;margin:6px 0 0;color:var(--ink)}
+  .fn-card .use{font-size:12px;margin:7px 0 0;color:var(--muted)}
+  .fn-card .use b{color:var(--ink)}
+
+  .internal{background:var(--surface-2);border:1px solid var(--hair);border-radius:12px;padding:14px 18px;font-size:12.5px;color:var(--muted);line-height:1.8}
+  .internal .fn{background:var(--surface);}
+  .foot{margin-top:24px;padding-top:14px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--muted)}
+  @media print{
+    :root{--ground:#fff;--surface:#fff;--surface-2:#F4EDE3;--ink:#231D19;--muted:#6B5F54;--hair:#D8CCBD;--clay:#93400F;--clay-ink:#7A3410;--chip:#F4EDE3}
+    @page{margin:11mm}.doc{padding:0}.how,.fn-card,.internal{break-inside:avoid}
+    ol li::before,.how h2 .ic{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style>
+
+<div class="doc">
+  <header class="head">
+    <p class="brand">🍕 La Casetta · Script Google (Apps Script)</p>
+    <h1>Guide du script Google</h1>
+    <p class="sub">Le « cerveau » côté cloud : il reçoit les ventes, remplit le Google Sheet, calcule les KPI et envoie les e-mails. Ce guide explique comment l'utiliser et à quoi sert chaque fonction.</p>
+  </header>
+
+  <section class="how">
+    <h2><span class="ic">📂</span> Ouvrir le script</h2>
+    <ol>
+      <li><span class="txt">Va sur <span class="k">script.google.com</span> et ouvre le projet <b>La Casetta</b> (celui lié à ton URL de caisse).</span></li>
+      <li><span class="txt">L'onglet <span class="k">&lt; &gt; Éditeur</span> (à gauche) affiche le code.</span></li>
+    </ol>
+  </section>
+
+  <section class="how">
+    <h2><span class="ic">▶️</span> Exécuter une fonction</h2>
+    <ol>
+      <li><span class="txt">En haut, ouvre le <b>menu déroulant des fonctions</b> (au milieu de la barre d'outils).</span></li>
+      <li><span class="txt">Choisis la fonction à lancer (ex. <span class="fn">rebuildAll</span>).</span></li>
+      <li><span class="txt">Clique <span class="k">▶ Exécuter</span>.</span></li>
+      <li><span class="txt">La 1ʳᵉ fois, Google demande une <b>autorisation</b> → « Examiner les autorisations » → choisis ton compte → « Autoriser ».</span></li>
+      <li><span class="txt">Le <b>Journal d'exécution</b> (en bas) affiche le résultat.</span></li>
+    </ol>
+  </section>
+
+  <section class="how">
+    <h2><span class="ic">🚀</span> Redéployer (après une mise à jour du code)</h2>
+    <ol>
+      <li><span class="txt">Colle le nouveau code → <span class="k">Enregistrer</span> (Ctrl/Cmd + S).</span></li>
+      <li><span class="txt"><span class="k">Déployer</span> ▸ <span class="k">Gérer les déploiements</span>.</span></li>
+      <li><span class="txt">Clique le <b>crayon ✏️</b>, choisis <b>Version : Nouvelle version</b>, puis <span class="k">Déployer</span>.</span></li>
+    </ol>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0"><b>Important :</b> « Nouvelle version » est l'étape clé — sans elle, l'URL sert l'ancien code. L'URL <span class="fn">/exec</span>, elle, ne change pas. Exécuter une fonction depuis l'éditeur utilise le code <b>enregistré</b> (pas besoin de redéployer) ; redéployer ne sert que pour l'URL appelée par la caisse.</p>
+  </section>
+
+  <div class="sec-title"><span class="badge b-once">À faire une fois</span> Mise en place des automatismes</div>
+  <div class="fns">
+    <div class="fn-card"><div class="name">createWeeklyTrigger</div><p class="role">Programme l'<b>e-mail récap hebdomadaire</b>.</p><p class="use"><b>Quand :</b> une fois. Envoi chaque <b>vendredi ~22h</b>.</p></div>
+    <div class="fn-card"><div class="name">createDailyEmailTrigger</div><p class="role">Programme l'<b>e-mail récap du jour</b>.</p><p class="use"><b>Quand :</b> une fois. Envoi chaque <b>soir ~22h15</b>.</p></div>
+    <div class="fn-card"><div class="name">createOpenTrigger</div><p class="role">Recalcule tous les onglets <b>à chaque ouverture</b> du Google Sheet.</p><p class="use"><b>Quand :</b> une fois.</p></div>
+    <div class="fn-card"><div class="name">setupFacebook</div><p class="role">Enregistre ton <b>ID de page + jeton Facebook</b> (dans les réglages privés).</p><p class="use"><b>Quand :</b> une fois, après avoir collé tes identifiants dans la fonction. Facultatif (Facebook).</p></div>
+    <div class="fn-card"><div class="name">createDailyFacebookTrigger</div><p class="role">Programme la <b>publication Facebook</b> de l'emplacement du jour.</p><p class="use"><b>Quand :</b> une fois, après <span class="fn">setupFacebook</span>. Publie chaque jour ~10h.</p></div>
+  </div>
+
+  <div class="sec-title"><span class="badge b-need">Au besoin</span> Maintenance</div>
+  <div class="fns">
+    <div class="fn-card"><div class="name">rebuildAll</div><p class="role"><b>Recalcule tous les onglets</b> de synthèse à partir de l'onglet Transactions.</p><p class="use"><b>Quand :</b> après une mise à jour du code, ou si un onglet semble faux.</p></div>
+    <div class="fn-card"><div class="name">deleteLastSale</div><p class="role"><b>Supprime la dernière vente</b> enregistrée, puis recalcule les onglets.</p><p class="use"><b>Quand :</b> pour retirer un ticket de test ou une erreur récente.</p></div>
+  </div>
+
+  <div class="sec-title"><span class="badge b-test">Test</span> Envoi / vérification immédiate</div>
+  <div class="fns">
+    <div class="fn-card"><div class="name">sendDailyReport</div><p class="role">Envoie <b>tout de suite</b> l'e-mail récap du jour.</p><p class="use"><b>Quand :</b> pour tester l'e-mail quotidien.</p></div>
+    <div class="fn-card"><div class="name">sendWeeklyReport</div><p class="role">Envoie <b>tout de suite</b> l'e-mail récap de la semaine.</p><p class="use"><b>Quand :</b> pour tester l'e-mail hebdo.</p></div>
+    <div class="fn-card"><div class="name">testPostFacebook</div><p class="role">Publie un <b>post Facebook de test</b> [TEST] sur ta page.</p><p class="use"><b>Quand :</b> pour vérifier la connexion Facebook. Supprime le post ensuite.</p></div>
+  </div>
+
+  <div class="sec-title"><span class="badge b-auto">Automatique</span> Ne pas exécuter à la main</div>
+  <div class="fns">
+    <div class="fn-card"><div class="name">doPost</div><p class="role">Reçoit les <b>ventes envoyées par la caisse</b>, les écrit dans Transactions et recalcule les onglets.</p><p class="use">Déclenché automatiquement à chaque vente.</p></div>
+    <div class="fn-card"><div class="name">doGet</div><p class="role">Répond aux demandes de la caisse : <b>charger l'historique</b>, <b>annuler</b> une vente, <b>supprimer la dernière</b>, <b>recalculer</b>.</p><p class="use">Déclenché automatiquement par le POS.</p></div>
+    <div class="fn-card"><div class="name">cancelTicket</div><p class="role">Passe un ticket au statut <b>« Annulé »</b> et recalcule. Appelée par la caisse lors d'une annulation.</p><p class="use">Ne pas lancer seule (a besoin d'un identifiant).</p></div>
+    <div class="fn-card"><div class="name">postTodayLocation</div><p class="role">Publie l'<b>emplacement du jour sur Facebook</b>.</p><p class="use">Déclenchée par le programmateur Facebook.</p></div>
+  </div>
+
+  <div class="sec-title"><span class="badge b-int">Interne</span> Briques du script — ne jamais exécuter</div>
+  <div class="internal">
+    Ces fonctions sont utilisées <b>par les autres</b> ; les lancer seules ne sert à rien (ou provoque une erreur) :
+    <span class="fn">getOrCreateSpreadsheet</span> <span class="fn">getOrCreateTransactionsSheet</span> <span class="fn">ensureSheet</span> <span class="fn">styleHeader</span> <span class="fn">numberTickets</span> <span class="fn">readValidatedRows</span> <span class="fn">computeStats</span> <span class="fn">createAllSheets</span> <span class="fn">getAllTransactions</span> <span class="fn">insightLines</span> <span class="fn">writeTable</span> <span class="fn">buildAndSendReport</span> <span class="fn">fbMessageForToday</span> <span class="fn">sheetCAParJour</span> <span class="fn">sheetCAParCategorie</span> <span class="fn">sheetCAParArticle</span> <span class="fn">sheetParHeure</span> <span class="fn">sheetParJourSemaine</span> <span class="fn">sheetCAParEmplacement</span> <span class="fn">sheetTableauDeBord</span> <span class="fn">sheetRecommandations</span> <span class="fn">dayKey</span> <span class="fn">dayLabel</span> <span class="fn">asDate</span> <span class="fn">add</span> <span class="fn">sortDescByVal</span>
+  </div>
+
+  <footer class="foot">
+    📌 Guide administrateur · La Casetta · mis à jour à chaque évolution du script. Astuce : après avoir collé une nouvelle version du code, lance <span class="fn">rebuildAll</span> pour appliquer les correctifs aux onglets, puis redéploie pour la caisse.
+  </footer>
+</div>

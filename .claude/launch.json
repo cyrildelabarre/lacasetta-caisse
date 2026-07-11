@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pos",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "4000", "D:\\POS"],
+      "port": 4000
+    }
+  ]
+}

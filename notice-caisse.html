@@ -1,0 +1,197 @@
+<style>
+  :root{
+    --ground:#FAF5EF; --surface:#FFFFFF; --surface-2:#F3EBDF; --chip:#F5EDE3;
+    --ink:#241E1A; --muted:#8A7B6E; --hair:#E7DCCC;
+    --clay:#A5451A; --clay-ink:#8A3A14; --olive:#61722F; --gold:#B87A1E;
+    --serif:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#15100E; --surface:#20191500; --surface-2:#241C17; --chip:#2C221B;
+    --ink:#F1E7DB; --muted:#A99A8C; --hair:#372B23;
+    --clay:#E0743E; --clay-ink:#F0B492; --olive:#A7BB74; --gold:#E0A852;
+  }}
+  :root[data-theme="light"]{--ground:#FAF5EF;--surface:#FFF;--surface-2:#F3EBDF;--chip:#F5EDE3;--ink:#241E1A;--muted:#8A7B6E;--hair:#E7DCCC;--clay:#A5451A;--clay-ink:#8A3A14;--olive:#61722F;--gold:#B87A1E;}
+  :root[data-theme="dark"]{--ground:#15100E;--surface:#201915;--surface-2:#241C17;--chip:#2C221B;--ink:#F1E7DB;--muted:#A99A8C;--hair:#372B23;--clay:#E0743E;--clay-ink:#F0B492;--olive:#A7BB74;--gold:#E0A852;}
+
+  *{box-sizing:border-box}
+  .doc{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.55;
+    padding:clamp(20px,4vw,44px);-webkit-font-smoothing:antialiased}
+  .head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;justify-content:space-between;
+    border-bottom:2px solid var(--clay);padding-bottom:18px;margin-bottom:26px}
+  .brand{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--clay);font-weight:700;margin:0}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4.5vw,42px);line-height:1.03;margin:.25em 0 .1em;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;margin:0;max-width:52ch}
+  .stamp{font-size:12px;color:var(--muted);text-align:right;line-height:1.6}
+  .stamp b{color:var(--ink)}
+  .stamp .v{display:inline-block;background:var(--surface-2);border:1px solid var(--hair);border-radius:999px;padding:2px 10px;margin-top:4px;color:var(--clay-ink);font-weight:600}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:18px 20px;break-inside:avoid}
+  .card h2{font-family:var(--serif);font-size:19px;font-weight:600;margin:0 0 2px;letter-spacing:0;display:flex;align-items:baseline;gap:10px}
+  .card h2 .no{font-size:12px;font-family:var(--sans);font-weight:700;color:var(--clay);letter-spacing:.08em;
+    background:var(--chip);border-radius:6px;padding:2px 7px}
+  .card .lead{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+  li{font-size:13.5px;padding-left:16px;position:relative}
+  li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--clay)}
+  li b{font-weight:600}
+  li .d{color:var(--muted)}
+  .chip{display:inline-block;background:var(--chip);border:1px solid var(--hair);border-radius:6px;
+    padding:1px 7px;font-size:12.5px;font-weight:600;color:var(--clay-ink);white-space:nowrap}
+  .tip li::before{background:var(--olive)}
+
+  .foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--muted)}
+  .foot .note{display:inline-block;background:var(--surface-2);border:1px solid var(--hair);border-radius:8px;padding:8px 12px;color:var(--ink)}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%}
+
+  @media print{
+    :root{--ground:#fff;--surface:#fff;--surface-2:#F4EDE3;--ink:#231D19;--muted:#6B5F54;--hair:#D8CCBD;--clay:#93400F;--clay-ink:#7A3410;--chip:#F4EDE3}
+    @page{margin:11mm}.doc{padding:0}.card{break-inside:avoid}
+  }
+</style>
+
+<div class="doc">
+  <header class="head">
+    <div>
+      <p class="brand">🍕 La Casetta · Camion pizza</p>
+      <h1>Notice de la caisse</h1>
+      <p class="sub">Guide de référence et de formation — toutes les fonctions de l'application d'encaissement.</p>
+    </div>
+    <div class="stamp">
+      Dernière mise à jour<br><b>9 juillet 2026</b>
+      <div class="v">v1.0</div>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <section class="card">
+      <h2><span class="no">01</span> Connexion &amp; sécurité</h2>
+      <p class="lead">Protéger l'accès à la caisse.</p>
+      <ul>
+        <li><b>Code PIN</b> <span class="d">— 4 chiffres à l'ouverture.</span></li>
+        <li><b>Verrouiller</b> <span class="chip">🔒</span> <span class="d">à tout moment.</span></li>
+        <li><b>Changer le PIN</b> <span class="chip">⚙️</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">02</span> Encaisser une vente</h2>
+      <p class="lead">Le cœur de la caisse.</p>
+      <ul>
+        <li><b>Catalogue par catégories</b> <span class="d">— touche un article pour l'ajouter.</span></li>
+        <li><b>Panier</b> <span class="d">— quantité +/−, retirer, « Vider ».</span></li>
+        <li><b>Paiement</b> <span class="chip">💶 Espèces</span> <span class="chip">💳 Carte</span></li>
+        <li><b>Rendu monnaie</b> <span class="d">— saisis le montant remis, le rendu s'affiche.</span></li>
+        <li><b>Valider le paiement</b> <span class="d">— enregistre la vente.</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">03</span> Remises &amp; offres</h2>
+      <p class="lead">Offrir des articles proprement.</p>
+      <ul>
+        <li><span class="chip">🎁 Offrir</span> <span class="d">— active le mode, puis touche les articles à passer à 0 €.</span></li>
+        <li><span class="chip">🍕 Fidélité</span> <span class="d">— offre la pizza la moins chère du panier.</span></li>
+        <li><b>Traçable</b> <span class="d">— les articles offerts sont enregistrés à 0 € (le CA reste juste).</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">04</span> Rouvrir / compléter une vente</h2>
+      <p class="lead">Le client ajoute après avoir payé.</p>
+      <ul>
+        <li>Dans le <b>Mémo</b>, bouton <span class="chip">🔁</span> sur la vente.</li>
+        <li>Ajoute les nouveaux articles au panier.</li>
+        <li><b>Encaisse le complément</b> <span class="d">— seul le montant des nouveaux articles est demandé.</span></li>
+        <li>La vente d'origine reste intacte ; le complément a son propre paiement.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">05</span> Catalogue &amp; catégories</h2>
+      <p class="lead">Gérer les articles.</p>
+      <ul>
+        <li><b>Ajouter / modifier / supprimer</b> un article <span class="chip">＋</span> <span class="chip">✏️</span></li>
+        <li><b>Réorganiser les articles</b> <span class="d">— mode ✏️ Éditer, glisser-déposer.</span></li>
+        <li><span class="chip">🗂 Catégories</span> <span class="d">— réorganiser (▲▼) et renommer.</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">06</span> Emplacement</h2>
+      <p class="lead">Où est le camion ce jour-là.</p>
+      <ul>
+        <li><b>Détecté automatiquement</b> <span class="d">— selon le calendrier hebdo (lun→ven).</span></li>
+        <li><span class="chip">📍</span> <b>Choix manuel</b> parmi les 5 lieux + saisie libre.</li>
+        <li>Enregistré sur <b>chaque vente</b> (sert au CA par emplacement).</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">07</span> Mémo du jour</h2>
+      <p class="lead">Le détail des ventes par date.</p>
+      <ul>
+        <li><b>Sélecteur de date</b> <span class="d">— choisis n'importe quel jour.</span></li>
+        <li><b>Récap</b> <span class="d">— nb tickets, CA, espèces, carte.</span></li>
+        <li><b>Liste des tickets</b> + bouton rouvrir 🔁</li>
+        <li>Données <b>local + Google Sheets</b> fusionnées.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">08</span> Tableau de bord</h2>
+      <p class="lead">Vue visuelle de l'activité.</p>
+      <ul>
+        <li><b>KPI</b> <span class="d">— CA, tickets, panier moyen, CA/jour.</span></li>
+        <li><b>Graphiques</b> <span class="d">— par jour, par heure (pic), emplacement, catégorie, paiements, attache, top pizzas.</span></li>
+        <li><b>Périodes</b> <span class="chip">Aujourd'hui</span> <span class="chip">7 j</span> <span class="chip">30 j</span> <span class="chip">Tout</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">09</span> Reporting &amp; exports</h2>
+      <p class="lead">Analyse détaillée.</p>
+      <ul>
+        <li><b>Plage de dates</b> personnalisable.</li>
+        <li>Financier, top/flop articles, catégories, paiements, CA/jour, pic horaire, panier moyen, emplacements, tickets, <b>recommandations</b>.</li>
+        <li><b>Export CSV</b> par tableau <span class="chip">⬇ CSV</span></li>
+        <li><span class="chip">☁️ Depuis Google Sheets</span> <span class="d">— tout l'historique, tous appareils.</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2><span class="no">10</span> Synchro &amp; application</h2>
+      <p class="lead">Cloud, hors-ligne, iPad.</p>
+      <ul>
+        <li><b>Sync automatique</b> vers Google Sheets à chaque vente.</li>
+        <li><b>Fonctionne hors-ligne</b> <span class="d">— synchro au retour du réseau.</span></li>
+        <li><b>Installée sur l'iPad</b> (plein écran, mises à jour auto).</li>
+      </ul>
+    </section>
+
+    <section class="card tip">
+      <h2><span class="no">＋</span> Connecté au Google Sheet</h2>
+      <p class="lead">Ce qui tourne côté cloud.</p>
+      <ul>
+        <li><b>8 onglets de KPI</b> recalculés à chaque vente.</li>
+        <li><b>E-mail récap automatique</b> <span class="d">— chaque vendredi 22h.</span></li>
+        <li><b>Recommandations</b> commerciales générées.</li>
+        <li><span class="d">Publication Facebook quotidienne : prête, en attente du jeton.</span></li>
+      </ul>
+    </section>
+
+  </div>
+
+  <footer class="foot">
+    <span class="note">📌 Cette notice est mise à jour à chaque nouvelle fonctionnalité ajoutée à la caisse.</span>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--clay)"></span> Fonction principale</span>
+      <span><span class="dot" style="background:var(--olive)"></span> Côté cloud / bonus</span>
+      <span><span class="chip">Ainsi</span> = bouton ou libellé visible à l'écran</span>
+    </div>
+  </footer>
+</div>
