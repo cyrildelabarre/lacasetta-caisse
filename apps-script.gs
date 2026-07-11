@@ -486,7 +486,7 @@ function sheetRecommandations(ss, stats) {
 // ════════════════════════════════════════════
 
 // Destinataires du récap (séparés par des virgules).
-const REPORT_EMAIL = 'cyril.delabarre@hotmail.com, clemence.bailly89@gmail.com';
+const REPORT_EMAIL = 'cyril.delabarre@hotmail.com, clemence.bailly89@gmail.com, bastian.iragne@gmail.com';
 
 // Récap hebdo (7 derniers jours).
 function sendWeeklyReport() {
@@ -613,7 +613,7 @@ function buildAndSendReport(tk, ln, opts) {
 
       <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">📅 Détail par jour</h3>
       <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Jour')}${th('Ventes')}${th('CA')}</tr>
+        <tr>${th('Jour')}${th('Tickets')}${th('CA')}</tr>
         ${dayRows.map(d=>`<tr>${td(d.label)}${td(d.n)}${td(fmt(d.ca),true)}</tr>`).join('')}
       </table>
 
