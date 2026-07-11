@@ -352,6 +352,7 @@ function renderDashboard() {
   // attache (chaque tx = 1 ticket)
   const withDessert = txs.filter(t => t.lines.some(l => /dessert/i.test(l.category || ''))).length;
   const withSupp    = txs.filter(t => t.lines.some(l => /suppl/i.test(l.category || ''))).length;
+  const withBoisson = txs.filter(t => t.lines.some(l => /boisson/i.test(l.category || ''))).length;
 
   // jours (max 12 récents)
   const dayKeys = Object.keys(byDay).sort().slice(-12);
@@ -405,6 +406,7 @@ function renderDashboard() {
         <div class="db-legend"><div><span class="db-sw" style="background:var(--terracotta)"></span>Carte ${fmtEur(byPay.carte)} · ${cartePct}%</div><div><span class="db-sw" style="background:var(--olive)"></span>Espèces ${fmtEur(byPay.especes)} · ${espPct}%</div></div>
       </div>
       <div class="db-card"><h3>Taux d'attache · top pizzas</h3><p class="cap">Leviers de panier moyen.</p>
+        <div class="db-meter"><div class="db-mtop"><span>Boisson</span><b>${Math.round(withBoisson / nbtk * 100)}%</b></div><div class="db-track"><div class="db-fill" style="width:${Math.max(Math.round(withBoisson / nbtk * 100), 1)}%;background:#2b7a9e"></div></div></div>
         <div class="db-meter"><div class="db-mtop"><span>Dessert</span><b>${Math.round(withDessert / nbtk * 100)}%</b></div><div class="db-track"><div class="db-fill" style="width:${Math.round(withDessert / nbtk * 100)}%;background:var(--olive)"></div></div></div>
         <div class="db-meter"><div class="db-mtop"><span>Supplément</span><b>${Math.round(withSupp / nbtk * 100)}%</b></div><div class="db-track"><div class="db-fill" style="width:${Math.max(Math.round(withSupp / nbtk * 100), 1)}%;background:var(--terracotta-light)"></div></div></div>
         <ol class="db-top">${topArt.map(([n, v]) => `<li><span>${n}</span><b>${fmtEur(v)}</b></li>`).join('') || '<li><span>—</span></li>'}</ol>
@@ -1269,6 +1271,8 @@ function renderReporting() {
   renderPaiements(txs);
   renderCaJour(txs);
   renderArticlesParJour(txs);
+  renderTopParCategorie(txs);
+  renderAttachement(txs);
   renderTicketsReport(txs);
   renderPanierMoyen(txs);
   renderCaCategorie(txs);
@@ -1533,6 +1537,77 @@ function renderArticlesParJour(txs) {
     </table>`;
 }
 
+// Article le plus vendu (en quantité) dans chaque catégorie.
+function topParCategorie(txs) {
+  const byCat = {}; // cat -> { art -> {qty, ca} }
+  txs.forEach(t => t.lines.forEach(l => {
+    const cat = l.category || '—';
+    (byCat[cat] = byCat[cat] || {});
+    (byCat[cat][l.name] = byCat[cat][l.name] || { qty: 0, ca: 0 });
+    byCat[cat][l.name].qty += l.qty;
+    byCat[cat][l.name].ca  += l.subtotal;
+  }));
+  return Object.entries(byCat).map(([cat, arts]) => {
+    const [name, v] = Object.entries(arts).sort((a, b) => b[1].qty - a[1].qty)[0];
+    return { cat, name, qty: v.qty, ca: v.ca };
+  }).sort((a, b) => b.qty - a.qty);
+}
+
+function renderTopParCategorie(txs) {
+  const el = document.getElementById('report-top-categorie');
+  if (!el) return;
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+  const rows = topParCategorie(txs);
+  el.innerHTML = `
+    <table class="report-table">
+      <thead><tr><th>Catégorie</th><th>Article star</th><th>Qté</th><th>CA</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr><td>${r.cat}</td><td style="font-weight:600">${emojiFor({name:r.name})}${r.name}</td>
+        <td>${r.qty}</td><td>${fmtEur(r.ca)}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// Taux d'attachement : part des ventes contenant boisson / dessert / supplément.
+function attachementStats(txs) {
+  const defs = [
+    { label: '🥤 Boissons',    re: /boisson/i },
+    { label: '🍮 Desserts',    re: /dessert/i },
+    { label: '🧀 Suppléments', re: /suppl/i },
+  ];
+  return defs.map(d => {
+    const n = txs.filter(t => t.lines.some(l => d.re.test(l.category || ''))).length;
+    const pct = txs.length ? Math.round(n / txs.length * 100) : 0;
+    const oneIn = n ? (txs.length / n) : null; // « 1 client sur X »
+    return { label: d.label, n, pct, oneIn };
+  });
+}
+
+function renderAttachement(txs) {
+  const el = document.getElementById('report-attachement');
+  if (!el) return;
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+  const stats = attachementStats(txs);
+  const colors = ['#2b7a9e', '#76894F', '#b04a1a'];
+  el.innerHTML = `
+    <div class="pay-bar">
+      ${stats.map((s, i) => `
+        <div class="pay-bar-row">
+          <span class="pay-bar-label">${s.label}</span>
+          <div class="pay-bar-track"><div class="pay-bar-fill" style="width:${s.pct}%;background:${colors[i]}"></div></div>
+          <span class="pay-bar-pct">${s.pct}%</span>
+        </div>`).join('')}
+    </div>
+    <table class="report-table" style="margin-top:.5rem">
+      <thead><tr><th>Catégorie</th><th>Ventes avec</th><th>Taux</th><th>En moyenne</th></tr></thead>
+      <tbody>${stats.map(s => `
+        <tr><td>${s.label}</td><td>${s.n} / ${txs.length}</td>
+        <td style="font-weight:700">${s.pct}%</td>
+        <td>${s.oneIn ? '1 client sur ' + (Math.round(s.oneIn * 10) / 10).toLocaleString('fr-FR') : '—'}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
 function renderTicketsReport(txs) {
   document.getElementById('report-tickets').innerHTML = txs.length ? `
     <table class="report-table">
@@ -1680,6 +1755,17 @@ function exportReport(type) {
       const entries = Object.entries(byDay).sort();
       rows = [['Jour', 'Nb articles vendus'], ...entries.map(([d, v]) => [d, v]),
         ['TOTAL', entries.reduce((s, [,v]) => s + v, 0)]];
+      break;
+    }
+    case 'top-categorie': {
+      rows = [['Catégorie', 'Article star', 'Qté', 'CA (€)'],
+        ...topParCategorie(txs).map(r => [r.cat, r.name, r.qty, r.ca.toFixed(2)])];
+      break;
+    }
+    case 'attachement': {
+      rows = [['Catégorie', 'Ventes avec', 'Ventes totales', 'Taux (%)', 'En moyenne'],
+        ...attachementStats(txs).map(s => [s.label.replace(/^\S+\s/, ''), s.n, txs.length, s.pct,
+          s.oneIn ? '1 client sur ' + (Math.round(s.oneIn * 10) / 10) : '—'])];
       break;
     }
     case 'tickets': {

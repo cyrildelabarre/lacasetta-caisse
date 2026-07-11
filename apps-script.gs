@@ -127,9 +127,11 @@ function computeStats(rows) {
         loc:   r[COL.loc] || '(non défini)',
         date:  asDate(r[COL.date]),
         dKey:  dayKey(r[COL.date]),
-        hour:  Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH')
+        hour:  Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH'),
+        cats:  {}
       };
     }
+    tickets[id].cats[String(r[COL.cat] || '')] = true; // catégories présentes dans la vente
   });
 
   return { lines, tickets: Object.values(tickets), ticketMap: tickets };
@@ -565,6 +567,31 @@ function buildAndSendReport(tk, ln, opts) {
   const locRows = sortDescByVal(byLoc);
   const dayRows = Object.keys(byDay).sort().map(k=>byDay[k]);
 
+  // Article star (le plus vendu en quantité) par catégorie
+  const byCatArt = {}; // cat -> { art -> {qty, ca} }
+  ln.forEach(l => {
+    (byCatArt[l.cat] = byCatArt[l.cat] || {});
+    (byCatArt[l.cat][l.art] = byCatArt[l.cat][l.art] || { qty: 0, ca: 0 });
+    byCatArt[l.cat][l.art].qty += l.qty;
+    byCatArt[l.cat][l.art].ca  += l.sub;
+  });
+  const catStars = Object.keys(byCatArt).map(cat => {
+    const best = Object.entries(byCatArt[cat]).sort((a,b)=>b[1].qty-a[1].qty)[0];
+    return { cat: cat, art: best[0], qty: best[1].qty, ca: best[1].ca };
+  }).sort((a,b)=>b.qty-a.qty);
+
+  // Taux d'attachement : part des ventes contenant boisson / dessert / supplément
+  const attach = [
+    { label:'🥤 Boissons',    re:/boisson/i },
+    { label:'🍮 Desserts',    re:/dessert/i },
+    { label:'🧀 Suppléments', re:/suppl/i },
+  ].map(d => {
+    const n = tk.filter(t => Object.keys(t.cats||{}).some(c => d.re.test(c))).length;
+    const p = nbTk ? Math.round(n/nbTk*100) : 0;
+    const oneIn = n ? Math.round(nbTk/n*10)/10 : null;
+    return { label:d.label, n:n, pct:p, oneIn:oneIn };
+  });
+
   // ── HTML ──
   const C = { brand:'#89310B', green:'#76894F', bg:'#faf7f4', line:'#e7ddd6' };
   const kpi = (label,val) =>
@@ -599,6 +626,18 @@ function buildAndSendReport(tk, ln, opts) {
         <tr>${th('Mode')}${th('Montant')}${th('Part')}</tr>
         <tr>${td('💶 Espèces')}${td(fmt(caEsp))}${td(pct(caEsp,caTot))}</tr>
         <tr>${td('💳 Carte')}${td(fmt(caCarte))}${td(pct(caCarte,caTot))}</tr>
+      </table>
+
+      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🏅 Article star par catégorie</h3>
+      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
+        <tr>${th('Catégorie')}${th('Article')}${th('Qté')}${th('CA')}</tr>
+        ${catStars.map(s=>`<tr>${td(s.cat)}${td(s.art,true)}${td(s.qty)}${td(fmt(s.ca))}</tr>`).join('')}
+      </table>
+
+      <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🧲 Taux d'attachement</h3>
+      <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
+        <tr>${th('Catégorie')}${th('Ventes avec')}${th('Taux')}${th('En moyenne')}</tr>
+        ${attach.map(a=>`<tr>${td(a.label)}${td(a.n+' / '+nbTk)}${td(a.pct+'%',true)}${td(a.oneIn?('1 client sur '+String(a.oneIn).replace('.',',')):'—')}</tr>`).join('')}
       </table>
 
       <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">🏆 Top articles</h3>
