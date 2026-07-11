@@ -1358,6 +1358,8 @@ function buildInsights(txs) {
   const ticketMoy = nbTx ? totalCA/nbTx : 0;
   const sortD = o => Object.entries(o).sort((a,b)=>b[1]-a[1]);
   const topArts=sortD(artCA), topHeure=sortD(heureCA), topJour=sortD(jourCA), topCat=sortD(catCA);
+  // « À surveiller » : on exclut les articles offerts (0 €)
+  const flopArts = topArts.filter(e => !/\(offert/i.test(e[0]));
 
   const f   = fmtEur;
   const pct = (a,b)=> b ? Math.round(a/b*100)+'%' : '—';
@@ -1371,8 +1373,8 @@ function buildInsights(txs) {
     `✅ Top 3 : ${g(topArts,2)} → ${f(gv(topArts,2))}`,
     `👉 Mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`,
     '━━━ 📉 Articles à surveiller',
-    `⚠️ Moins vendu : ${g(topArts,topArts.length-1)} → ${f(gv(topArts,topArts.length-1))} (${artQty[g(topArts,topArts.length-1)]||0} vendus)`,
-    `⚠️ 2e moins vendu : ${g(topArts,topArts.length-2)} → ${f(gv(topArts,topArts.length-2))}`,
+    `⚠️ Moins vendu : ${g(flopArts,flopArts.length-1)} → ${f(gv(flopArts,flopArts.length-1))} (${artQty[g(flopArts,flopArts.length-1)]||0} vendus)`,
+    `⚠️ 2e moins vendu : ${g(flopArts,flopArts.length-2)} → ${f(gv(flopArts,flopArts.length-2))}`,
     `👉 Envisage de les retirer ou de les proposer en "offre du jour".`,
     '━━━ 🍕 Catégories',
     ...topCat.map(([cat,ca],i)=>`${i===0?'🥇':i===1?'🥈':'🥉'} ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
