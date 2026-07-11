@@ -224,6 +224,7 @@ function insightLines(tk, ln) {
 function createAllSheets(ss) {
   const stats = computeStats(readValidatedRows(ss));
   sheetCAParJour(ss, stats);
+  sheetArticlesParJour(ss, stats);
   sheetPizzasParJour(ss, stats);
   sheetCAParCategorie(ss, stats);
   sheetCAParArticle(ss, stats);
@@ -255,6 +256,25 @@ function sheetCAParJour(ss, stats) {
   writeTable(s, "CHIFFRE D'AFFAIRES PAR JOUR", '#76894F',
     ['Date','Nb tickets','Nb articles','CA total (€)','CA Espèces (€)','CA Carte (€)','Ticket moyen (€)'],
     rows, [120,90,100,120,120,120,120]);
+}
+
+// Nombre total d'articles vendus par jour (toutes catégories).
+function sheetArticlesParJour(ss, stats) {
+  const s = ensureSheet(ss, '📦 Articles par Jour', '📅 CA par Jour');
+  const byDay = {}; // dKey -> {label, qty}
+  stats.lines.forEach(l => {
+    const g = byDay[l.dKey] || (byDay[l.dKey] = { label: dayLabel(l.date), qty: 0 });
+    g.qty += l.qty;
+  });
+  const keys = Object.keys(byDay).sort().reverse();
+  const rows = keys.map(k => [byDay[k].label, byDay[k].qty]);
+  if (rows.length) {
+    const tot = keys.reduce((a, k) => a + byDay[k].qty, 0);
+    rows.push(['TOTAL', tot]);
+  }
+  writeTable(s, 'ARTICLES VENDUS PAR JOUR', '#76894F',
+    ['Date', 'Nb articles vendus'], rows, [140, 160]);
+  if (rows.length) s.getRange(2 + rows.length, 1, 1, 2).setFontWeight('bold').setBackground('#f4f6ee');
 }
 
 // Nombre de pizzas vendues par jour, en distinguant petites et grandes.
@@ -569,7 +589,7 @@ function buildAndSendReport(tk, ln, opts) {
     </div>
     <div style="padding:20px 24px">
       <table width="100%" cellspacing="8" cellpadding="0"><tr>
-        ${kpi('CA total', fmt(caTot))}${kpi('Tickets', nbTk)}${kpi('Ticket moyen', fmt(ticketMoy))}${kpi('Articles vendus', nbArt)}
+        ${kpi('CA total', fmt(caTot))}${kpi('Ventes', nbTk)}${kpi('Ticket moyen', fmt(ticketMoy))}${kpi('Articles vendus', nbArt)}
       </tr></table>
 
       <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">💳 Paiements</h3>
@@ -593,7 +613,7 @@ function buildAndSendReport(tk, ln, opts) {
 
       <h3 style="color:${C.brand};margin:22px 0 8px;font-size:15px">📅 Détail par jour</h3>
       <table width="100%" cellspacing="0" style="background:#fff;border:1px solid ${C.line};border-radius:8px;overflow:hidden">
-        <tr>${th('Jour')}${th('Tickets')}${th('CA')}</tr>
+        <tr>${th('Jour')}${th('Ventes')}${th('CA')}</tr>
         ${dayRows.map(d=>`<tr>${td(d.label)}${td(d.n)}${td(fmt(d.ca),true)}</tr>`).join('')}
       </table>
 
@@ -611,7 +631,7 @@ function buildAndSendReport(tk, ln, opts) {
 
   MailApp.sendEmail({
     to: REPORT_EMAIL,
-    subject: `🍕 La Casetta — ${opts.subjectKind} : ${fmt(caTot)} · ${nbTk} tickets (${periode})`,
+    subject: `🍕 La Casetta — ${opts.subjectKind} : ${fmt(caTot)} · ${nbTk} ventes (${periode})`,
     htmlBody: html
   });
 }

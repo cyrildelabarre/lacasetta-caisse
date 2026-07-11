@@ -341,7 +341,8 @@ function renderDashboard() {
   const A = (m, k, n) => { m[k] = (m[k] || 0) + n; };
   txs.forEach(t => {
     const d = t.date.slice(0, 10);
-    (byDay[d] = byDay[d] || { n: 0, ca: 0 }); byDay[d].n++; byDay[d].ca += t.total;
+    (byDay[d] = byDay[d] || { n: 0, ca: 0, art: 0 });
+    byDay[d].n++; byDay[d].ca += t.total; byDay[d].art += t.lines.reduce((a, l) => a + l.qty, 0);
     A(byLoc, t.location || '(non défini)', t.total);
     A(byHour, String(new Date(t.date).getHours()).padStart(2, '0'), t.total);
     byPay[t.method] = (byPay[t.method] || 0) + t.total;
@@ -360,6 +361,15 @@ function renderDashboard() {
     return { label: dd.toLocaleDateString('fr-FR', { weekday: 'short' }), sub: dd.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
       value: byDay[d].ca, vlabel: Math.round(byDay[d].ca) + '€', hot: byDay[d].ca === peakDayCA,
       title: `${byDay[d].n} tickets · ${fmtEur(byDay[d].ca)}` };
+  });
+
+  // articles vendus par jour
+  const peakDayArt = Math.max(...dayKeys.map(d => byDay[d].art));
+  const artDayItems = dayKeys.map(d => {
+    const dd = new Date(d + 'T12:00:00');
+    return { label: dd.toLocaleDateString('fr-FR', { weekday: 'short' }), sub: dd.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
+      value: byDay[d].art, vlabel: String(byDay[d].art), hot: byDay[d].art === peakDayArt,
+      title: `${byDay[d].art} articles` };
   });
 
   // heures
@@ -386,6 +396,7 @@ function renderDashboard() {
     </div>
     <div class="db-grid">
       <div class="db-card"><h3>Chiffre d'affaires par jour</h3><p class="cap">Jour le plus fort surligné.</p>${dbCols(dayItems)}</div>
+      <div class="db-card"><h3>Articles vendus par jour</h3><p class="cap">Nombre d'articles écoulés.</p>${dbCols(artDayItems)}</div>
       <div class="db-card"><h3>Affluence par heure</h3><p class="cap">Ton pic de vente.</p>${dbCols(hourItems)}</div>
       <div class="db-card"><h3>CA par emplacement</h3><p class="cap">Part du CA total.</p>${dbRows(locRows)}</div>
       <div class="db-card"><h3>CA par catégorie</h3><p class="cap">Ce qui fait le chiffre.</p>${dbRows(catRows)}</div>
@@ -1257,6 +1268,7 @@ function renderReporting() {
   renderTopArticles(txs, false);
   renderPaiements(txs);
   renderCaJour(txs);
+  renderArticlesParJour(txs);
   renderTicketsReport(txs);
   renderPanierMoyen(txs);
   renderCaCategorie(txs);
@@ -1499,6 +1511,26 @@ function renderCaJour(txs) {
   ` : '<p class="empty-msg">Aucune donnée</p>';
 }
 
+function renderArticlesParJour(txs) {
+  const el = document.getElementById('report-articles-jour');
+  if (!el) return;
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+  const byDay = {};
+  txs.forEach(t => {
+    const d = t.date.slice(0, 10);
+    byDay[d] = (byDay[d] || 0) + t.lines.reduce((s, l) => s + l.qty, 0);
+  });
+  const days = Object.keys(byDay).sort().reverse();
+  const total = days.reduce((s, d) => s + byDay[d], 0);
+  el.innerHTML = `
+    <table class="report-table">
+      <thead><tr><th>Jour</th><th>Nb articles vendus</th></tr></thead>
+      <tbody>${days.map(d => `<tr><td>${fmtDate(d)}</td><td style="font-weight:700">${byDay[d]}</td></tr>`).join('')}
+        <tr style="background:var(--olive-bg)"><td style="font-weight:700">TOTAL</td><td style="font-weight:700">${total}</td></tr>
+      </tbody>
+    </table>`;
+}
+
 function renderTicketsReport(txs) {
   document.getElementById('report-tickets').innerHTML = txs.length ? `
     <table class="report-table">
@@ -1638,6 +1670,14 @@ function exportReport(type) {
       txs.forEach(t => { const d = t.date.slice(0,10); byDay[d] = (byDay[d]||0) + t.total; });
       rows = [['Jour', 'CA (€)', 'Tickets'],
         ...Object.entries(byDay).sort().map(([d, v]) => [d, v.toFixed(2), txs.filter(t=>t.date.slice(0,10)===d).length])];
+      break;
+    }
+    case 'articles-jour': {
+      const byDay = {};
+      txs.forEach(t => { const d = t.date.slice(0,10); byDay[d] = (byDay[d]||0) + t.lines.reduce((s,l)=>s+l.qty,0); });
+      const entries = Object.entries(byDay).sort();
+      rows = [['Jour', 'Nb articles vendus'], ...entries.map(([d, v]) => [d, v]),
+        ['TOTAL', entries.reduce((s, [,v]) => s + v, 0)]];
       break;
     }
     case 'tickets': {
