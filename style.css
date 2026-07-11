@@ -209,33 +209,11 @@ header {
   overflow: hidden;
 }
 
-.catalogue-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: .8rem 1.2rem;
-  border-bottom: 1px solid var(--border);
-}
-.catalogue-header h2 { font-size: 1rem; }
-
-.btn-icon {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  border: none;
-  background: var(--terracotta);
-  color: var(--white);
-  font-size: 1.3rem;
-  cursor: pointer;
-  line-height: 1;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s;
-}
-.btn-icon:hover { background: var(--terracotta-light); }
-
+/* Barre de catégories = première ligne du catalogue (Tous, Pizzas petites, …) */
 .categories {
   display: flex;
   gap: .4rem;
-  padding: .6rem 1rem;
+  padding: .8rem 1rem .6rem;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
 }

@@ -959,7 +959,7 @@ function openArticleModal(art = null) {
   document.getElementById('modal-article').classList.add('open');
 }
 
-document.getElementById('btn-add-article').addEventListener('click', () => openArticleModal());
+// (l'ajout d'article se fait via le menu ☰ → « ➕ Ajouter un article »)
 document.getElementById('btn-modal-cancel').addEventListener('click', closeArticleModal);
 document.getElementById('modal-article').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-article')) closeArticleModal();
