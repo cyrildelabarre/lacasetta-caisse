@@ -672,7 +672,7 @@ function buildAndSendReport(tk, ln, opts) {
 
   MailApp.sendEmail({
     to: REPORT_EMAIL,
-    subject: `🍕 La Casetta — ${opts.subjectKind} : ${fmt(caTot)} · ${nbTk} ventes (${periode})`,
+    subject: `🍕 La Casetta — ${opts.subjectKind} : ${fmt(caTot)} · ${nbTk} vente${nbTk > 1 ? 's' : ''} (${periode})`,
     htmlBody: html
   });
 }
