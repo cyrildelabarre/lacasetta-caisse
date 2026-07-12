@@ -210,6 +210,77 @@ function addTransaction(tx) {
   saveTransactions(txs);
 }
 
+// ── Catalogue partagé (synchronisé entre tous les iPads via Google Sheets) ─────
+// Le catalogue passe TOUJOURS par le backend de prod (même en mode formation) :
+// c'est le même menu d'articles pour tout le monde.
+let catalogueUpdatedAt   = LS.get('pos_catalogue_updatedAt', '');
+let cataloguePushPending = false;
+let catalogueLoading     = false;
+
+// Sauvegarde locale + envoi au cloud à chaque modification du catalogue.
+function saveArticles() {
+  LS.set('pos_articles', articles);
+  catalogueUpdatedAt = new Date().toISOString();
+  LS.set('pos_catalogue_updatedAt', catalogueUpdatedAt);
+  pushCatalogue();
+}
+
+// Envoie tout le catalogue au Google Sheet (avec reprise si hors-ligne).
+async function pushCatalogue() {
+  const payload = {
+    catalogue: articles.map((a, i) => ({
+      id: a.id, name: a.name, category: a.category,
+      price: a.price, emoji: a.emoji || '', order: i
+    })),
+    updatedAt: catalogueUpdatedAt
+  };
+  try {
+    const res = await fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify(payload) });
+    const j = await res.json();
+    if (j && j.ok) { cataloguePushPending = false; setSyncStatus('ok'); setTimeout(() => setSyncStatus('idle'), 2000); }
+    else cataloguePushPending = true;
+  } catch {
+    cataloguePushPending = true;   // repartira via l'écouteur online / la relance périodique
+  }
+}
+
+// Récupère le catalogue partagé au démarrage (et au besoin) — JSONP, sans CORS.
+function pullCatalogue() {
+  if (catalogueLoading) return;
+  catalogueLoading = true;
+  const cbName = '__catCb' + Date.now();
+  let script;
+  const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+    if (script) script.remove(); catalogueLoading = false; clearTimeout(timer); };
+  const timer = setTimeout(cleanup, 20000);
+  window[cbName] = data => {
+    cleanup();
+    if (!data || !data.ok || !Array.isArray(data.articles)) return;
+    const remoteAt = data.updatedAt || '';
+    if (data.articles.length === 0) {
+      // Cloud vide : le 1er iPad amorce le catalogue partagé avec ses articles.
+      if (articles.length && !remoteAt) pushCatalogue();
+      return;
+    }
+    // On adopte le catalogue distant s'il est plus récent et qu'on n'a pas d'édition locale en attente.
+    if (!cataloguePushPending && (!catalogueUpdatedAt || remoteAt > catalogueUpdatedAt)) {
+      articles = data.articles.map(a => ({
+        id: a.id, name: a.name, category: a.category,
+        price: Number(a.price), emoji: a.emoji || ''
+      }));
+      LS.set('pos_articles', articles);          // adoption locale SANS repousser au cloud
+      catalogueUpdatedAt = remoteAt;
+      LS.set('pos_catalogue_updatedAt', catalogueUpdatedAt);
+      renderCategories();
+      renderArticles();
+    }
+  };
+  script = document.createElement('script');
+  script.src = PROD_SHEETS_URL + '?action=catalogue&callback=' + cbName + '&t=' + Date.now();
+  script.onerror = cleanup;
+  document.body.appendChild(script);
+}
+
 // ── Rouvrir une vente payée pour encaisser un complément ──────────────────────
 function reopenTransaction(id) {
   if (ticket.length) { showToast('Terminez ou videz le ticket en cours avant de rouvrir une vente.'); return; }
@@ -529,7 +600,7 @@ function saveCategoryModal() {
     if (r.name !== r.orig) articles.forEach(a => { if (a.category === r.orig) a.category = r.name; });
   });
   categoryOrder = catRows.map(r => r.name);
-  LS.set('pos_articles', articles);
+  saveArticles();
   LS.set('pos_category_order', categoryOrder);
   // Si la catégorie active a été renommée, on suit
   const renamed = {}; catRows.forEach(r => { renamed[r.orig] = r.name; });
@@ -624,7 +695,7 @@ document.getElementById('btn-banner-done').addEventListener('click', () => {
 const menuModal = document.getElementById('modal-menu');
 function closeMenu() { menuModal.classList.remove('open'); }
 
-document.getElementById('btn-menu').addEventListener('click', () => { updateTestMenuLabel(); menuModal.classList.add('open'); });
+document.getElementById('btn-menu').addEventListener('click', () => { updateTestMenuLabel(); pullCatalogue(); menuModal.classList.add('open'); });
 document.getElementById('btn-menu-close').addEventListener('click', closeMenu);
 menuModal.addEventListener('click', e => { if (e.target === menuModal) closeMenu(); });
 
@@ -748,7 +819,7 @@ function dragSaveOrder(grid) {
   const sorted = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
   const hidden = articles.filter(a => !ids.includes(a.id));
   articles = [...sorted, ...hidden];
-  LS.set('pos_articles', articles);
+  saveArticles();
 }
 
 // ── Initialisation unique des listeners (sur le document) ────────────────────
@@ -1041,7 +1112,7 @@ document.getElementById('btn-modal-delete').addEventListener('click', () => {
   articles = articles.filter(a => a.id !== editingArticleId);
   // Retire aussi du ticket en cours si présent
   ticket = ticket.filter(l => l.article.id !== editingArticleId);
-  LS.set('pos_articles', articles);
+  saveArticles();
   closeArticleModal();
   renderCategories();
   renderArticles();
@@ -1062,7 +1133,7 @@ document.getElementById('btn-modal-save').addEventListener('click', () => {
   } else {
     articles.push({ id: uid(), name, category, price, emoji });
   }
-  LS.set('pos_articles', articles);
+  saveArticles();
   closeArticleModal();
   renderCategories();
   renderArticles();
@@ -2076,13 +2147,15 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => {
   setSyncStatus('syncing');
   syncToSheets();
+  if (cataloguePushPending) pushCatalogue();
+  pullCatalogue();
 });
 
-// Filet de sécurité : relance périodique tant qu'il reste des ventes en attente.
-// (L'événement « online » est peu fiable sur iOS Safari ; ce timer garantit la
-//  synchro dès que la connexion redevient réellement joignable.)
+// Filet de sécurité : relance périodique tant qu'il reste des ventes / un
+// catalogue en attente. (L'événement « online » est peu fiable sur iOS Safari.)
 setInterval(() => {
   if (getTransactions().some(t => !t.synced)) syncToSheets();
+  if (cataloguePushPending) pushCatalogue();
 }, 15000);
 
 // Sync après chaque transaction validée
@@ -2099,4 +2172,5 @@ renderTestBanner();   // restaure la bannière si le mode formation était actif
 updateTestMenuLabel();
 renderMemo();
 renderReporting();
-syncToSheets(); // sync au démarrage
+syncToSheets();  // sync des ventes au démarrage
+pullCatalogue(); // récupère le catalogue partagé au démarrage

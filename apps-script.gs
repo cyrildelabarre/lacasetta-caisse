@@ -908,8 +908,16 @@ function createDailyFacebookTrigger() {
 function doPost(e) {
   try {
     const ss    = getOrCreateSpreadsheet();
-    const sheet = getOrCreateTransactionsSheet(ss);
     const data  = JSON.parse(e.postData.contents);
+
+    // Synchronisation du catalogue d'articles (partagé entre tous les iPads).
+    if (data && !Array.isArray(data) && data.catalogue) {
+      const n = saveCatalogue(ss, data.catalogue, data.updatedAt);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, catalogue: n }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const sheet = getOrCreateTransactionsSheet(ss);
     const txs   = Array.isArray(data) ? data : [data];
 
     const lr  = sheet.getLastRow();
@@ -946,6 +954,46 @@ function doPost(e) {
   }
 }
 
+// ════════════════════════════════════════════
+//  CATALOGUE D'ARTICLES (partagé entre tous les iPads)
+// ════════════════════════════════════════════
+function getCatalogueSheet(ss) {
+  let sh = ss.getSheetByName('Catalogue');
+  if (!sh) {
+    sh = ss.insertSheet('Catalogue');
+    sh.appendRow(['id', 'name', 'category', 'price', 'emoji', 'order', 'updatedAt']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function getCatalogue(ss) {
+  const sh   = getCatalogueSheet(ss);
+  const vals = sh.getDataRange().getValues();
+  let updatedAt = '';
+  const articles = vals.slice(1)
+    .filter(r => r[0] !== '' && r[0] != null)
+    .map(r => {
+      if (r[6] && String(r[6]) > updatedAt) updatedAt = String(r[6]);
+      return { id: String(r[0]), name: String(r[1]), category: String(r[2]),
+               price: Number(r[3]), emoji: String(r[4] || ''), order: Number(r[5] || 0) };
+    })
+    .sort((a, b) => a.order - b.order);
+  return { articles: articles, updatedAt: updatedAt };
+}
+
+function saveCatalogue(ss, articles, updatedAt) {
+  const sh  = getCatalogueSheet(ss);
+  const now = updatedAt || new Date().toISOString();
+  sh.clearContents();
+  sh.getRange(1, 1, 1, 7).setValues([['id', 'name', 'category', 'price', 'emoji', 'order', 'updatedAt']]);
+  const rows = (articles || []).map((a, i) =>
+    [a.id, a.name, a.category, a.price, a.emoji || '', (a.order != null ? a.order : i), now]);
+  if (rows.length) sh.getRange(2, 1, rows.length, 7).setValues(rows);
+  sh.setFrozenRows(1);
+  return rows.length;
+}
+
 function doGet(e) {
   const action = e && e.parameter ? e.parameter.action : '';
   const cb     = e && e.parameter ? e.parameter.callback : '';
@@ -960,6 +1008,9 @@ function doGet(e) {
     payload = { ok: true, rebuilt: true };
   } else if (action === 'cancel') {
     payload = { ok: true, cancelled: cancelTicket(e.parameter.id) };
+  } else if (action === 'catalogue') {
+    const c = getCatalogue(getOrCreateSpreadsheet());
+    payload = { ok: true, articles: c.articles, updatedAt: c.updatedAt };
   } else {
     payload = { ok: true };
   }
