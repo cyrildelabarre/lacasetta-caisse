@@ -288,9 +288,15 @@ header {
 /* Ligne « Article actif » dans le modal */
 .art-active-row {
   display: flex; align-items: center; gap: .5rem;
-  margin-top: .8rem; cursor: pointer; font-weight: 600;
+  margin-top: .8rem; cursor: pointer; font-weight: 600; flex-wrap: wrap;
 }
-.art-active-row input { width: 20px; height: 20px; }
+/* input[type=checkbox] > .modal input (spécificité plus forte) : sinon la case
+   hériterait de width:100% et déborderait du cadre. */
+.art-active-row input[type="checkbox"] {
+  flex: 0 0 auto; width: 22px; height: 22px; margin: 0;
+  accent-color: var(--olive);
+}
+.art-active-row span { flex: 1; min-width: 0; color: var(--dark); }
 .art-active-row small { font-weight: 400; color: var(--mid); }
 
 .article-emoji { font-size: 2rem; display: block; margin-bottom: .3rem; }
