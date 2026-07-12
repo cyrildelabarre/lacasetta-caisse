@@ -125,7 +125,7 @@ const LS = {
 // synchronisées vers un déploiement Apps Script de TEST (Sheet de test) — jamais
 // vers la prod. Le catalogue (articles/catégories) reste partagé entre les modes.
 const PROD_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxLLOjnSFDfx5DapiThy6zis016rppz6N7cW6fcvv_IUB6GJI1aUJBI_SHiVmUgY49_/exec';
-const TEST_SHEETS_URL = ''; // ← URL /exec du déploiement de TEST (à renseigner)
+const TEST_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzMZ1t__JojJAREbp7uP6uYyFiVurIIAAT95TwIIUgshJX_sWMBRHjh6vgqkG7B3ig0OA/exec';
 
 function isTestMode() { return LS.get('pos_testmode', false) === true; }
 function sheetsUrl()  { return isTestMode() ? TEST_SHEETS_URL : PROD_SHEETS_URL; }
