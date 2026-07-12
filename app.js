@@ -230,7 +230,7 @@ async function pushCatalogue() {
   const payload = {
     catalogue: articles.map((a, i) => ({
       id: a.id, name: a.name, category: a.category,
-      price: a.price, emoji: a.emoji || '', order: i
+      price: a.price, emoji: a.emoji || '', order: i, active: a.active !== false
     })),
     updatedAt: catalogueUpdatedAt
   };
@@ -270,7 +270,7 @@ function pullCatalogue() {
     if (!cataloguePushPending && (!catalogueUpdatedAt || remoteAt > catalogueUpdatedAt)) {
       articles = data.articles.map(a => ({
         id: a.id, name: a.name, category: a.category,
-        price: Number(a.price), emoji: a.emoji || ''
+        price: Number(a.price), emoji: a.emoji || '', active: a.active !== false
       }));
       LS.set('pos_articles', articles);          // adoption locale SANS repousser au cloud
       catalogueUpdatedAt = remoteAt;
@@ -626,17 +626,21 @@ document.getElementById('modal-category').addEventListener('click', e => {
 function renderArticles() {
   const grid = document.getElementById('articles-grid');
   grid.innerHTML = '';
-  const list = activeCategory === 'Tous' ? articles : articles.filter(a => a.category === activeCategory);
+  const editing = editMode || pickEditMode; // en édition, on montre AUSSI les inactifs
+  let list = activeCategory === 'Tous' ? articles : articles.filter(a => a.category === activeCategory);
+  if (!editing) list = list.filter(a => a.active !== false); // à la vente : masque les inactifs
   if (!list.length) {
     grid.innerHTML = '<p class="empty-msg">Aucun article</p>';
     return;
   }
   list.forEach(art => {
+    const inactive = art.active === false;
     const card = document.createElement('div');
-    card.className = 'article-card';
+    card.className = 'article-card' + (inactive ? ' inactive' : '');
     card.dataset.artId = art.id;
     card.innerHTML = `
       <span class="drag-handle">⠿</span>
+      ${inactive ? '<span class="article-inactive-badge">Inactif</span>' : ''}
       <span class="article-emoji">${art.emoji}</span>
       <div class="article-name">${art.name}</div>
       <div class="article-price">${fmtEur(art.price)}</div>
@@ -1096,6 +1100,7 @@ function openArticleModal(art = null) {
   document.getElementById('art-category').value = art?.category ?? '';
   document.getElementById('art-price').value    = art?.price    ?? '';
   document.getElementById('art-emoji').value    = art?.emoji    ?? '🍕';
+  document.getElementById('art-active').checked = art ? (art.active !== false) : true;
   document.getElementById('btn-modal-delete').style.display = art ? 'inline-flex' : 'none';
   document.getElementById('modal-article').classList.add('open');
 }
@@ -1129,13 +1134,14 @@ document.getElementById('btn-modal-save').addEventListener('click', () => {
   const category = document.getElementById('art-category').value.trim();
   const price    = parseFloat(document.getElementById('art-price').value);
   const emoji    = document.getElementById('art-emoji').value.trim() || '🍕';
+  const active   = document.getElementById('art-active').checked;
   if (!name || !category || isNaN(price)) { showToast('Remplissez tous les champs.'); return; }
 
   if (editingArticleId) {
     const art = articles.find(a => a.id === editingArticleId);
-    if (art) { art.name = name; art.category = category; art.price = price; art.emoji = emoji; }
+    if (art) { art.name = name; art.category = category; art.price = price; art.emoji = emoji; art.active = active; }
   } else {
-    articles.push({ id: uid(), name, category, price, emoji });
+    articles.push({ id: uid(), name, category, price, emoji, active });
   }
   saveArticles();
   closeArticleModal();

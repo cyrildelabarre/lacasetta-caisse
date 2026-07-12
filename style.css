@@ -276,6 +276,23 @@ header {
 }
 .article-card:active { transform: scale(.97); }
 
+/* Article inactif (visible seulement en mode édition) */
+.article-card.inactive { opacity: .5; border-style: dashed; }
+.article-inactive-badge {
+  position: absolute; top: 4px; right: 4px; z-index: 1;
+  background: var(--danger); color: #fff;
+  font-size: .6rem; font-weight: 700; letter-spacing: .02em;
+  padding: .1rem .35rem; border-radius: 6px;
+}
+
+/* Ligne « Article actif » dans le modal */
+.art-active-row {
+  display: flex; align-items: center; gap: .5rem;
+  margin-top: .8rem; cursor: pointer; font-weight: 600;
+}
+.art-active-row input { width: 20px; height: 20px; }
+.art-active-row small { font-weight: 400; color: var(--mid); }
+
 .article-emoji { font-size: 2rem; display: block; margin-bottom: .3rem; }
 .article-name { font-size: .78rem; font-weight: 600; color: var(--dark); margin-bottom: .2rem; }
 .article-price { font-size: .85rem; color: var(--terracotta); font-weight: 700; }

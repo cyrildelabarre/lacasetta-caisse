@@ -957,11 +957,13 @@ function doPost(e) {
 // ════════════════════════════════════════════
 //  CATALOGUE D'ARTICLES (partagé entre tous les iPads)
 // ════════════════════════════════════════════
+const CAT_HEADERS = ['id', 'name', 'category', 'price', 'emoji', 'order', 'updatedAt', 'active'];
+
 function getCatalogueSheet(ss) {
   let sh = ss.getSheetByName('Catalogue');
   if (!sh) {
     sh = ss.insertSheet('Catalogue');
-    sh.appendRow(['id', 'name', 'category', 'price', 'emoji', 'order', 'updatedAt']);
+    sh.appendRow(CAT_HEADERS);
     sh.setFrozenRows(1);
   }
   return sh;
@@ -975,8 +977,12 @@ function getCatalogue(ss) {
     .filter(r => r[0] !== '' && r[0] != null)
     .map(r => {
       if (r[6] && String(r[6]) > updatedAt) updatedAt = String(r[6]);
+      // active = dernière colonne ; vide (anciennes lignes) => actif par défaut.
+      const active = (r[7] === '' || r[7] == null) ? true
+                   : (r[7] === true || String(r[7]).toLowerCase() === 'true');
       return { id: String(r[0]), name: String(r[1]), category: String(r[2]),
-               price: Number(r[3]), emoji: String(r[4] || ''), order: Number(r[5] || 0) };
+               price: Number(r[3]), emoji: String(r[4] || ''), order: Number(r[5] || 0),
+               active: active };
     })
     .sort((a, b) => a.order - b.order);
   return { articles: articles, updatedAt: updatedAt };
@@ -986,10 +992,11 @@ function saveCatalogue(ss, articles, updatedAt) {
   const sh  = getCatalogueSheet(ss);
   const now = updatedAt || new Date().toISOString();
   sh.clearContents();
-  sh.getRange(1, 1, 1, 7).setValues([['id', 'name', 'category', 'price', 'emoji', 'order', 'updatedAt']]);
+  sh.getRange(1, 1, 1, CAT_HEADERS.length).setValues([CAT_HEADERS]);
   const rows = (articles || []).map((a, i) =>
-    [a.id, a.name, a.category, a.price, a.emoji || '', (a.order != null ? a.order : i), now]);
-  if (rows.length) sh.getRange(2, 1, rows.length, 7).setValues(rows);
+    [a.id, a.name, a.category, a.price, a.emoji || '', (a.order != null ? a.order : i), now,
+     a.active !== false]);
+  if (rows.length) sh.getRange(2, 1, rows.length, CAT_HEADERS.length).setValues(rows);
   sh.setFrozenRows(1);
   return rows.length;
 }
