@@ -285,6 +285,18 @@ header {
   padding: .1rem .35rem; border-radius: 6px;
 }
 
+/* Modal « Articles inactifs » */
+.inactive-list { display: flex; flex-direction: column; gap: .5rem; max-height: 55vh; overflow-y: auto; }
+.inactive-row {
+  display: flex; align-items: center; gap: .6rem;
+  background: var(--terracotta-bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: .5rem .7rem;
+}
+.inactive-emoji { font-size: 1.4rem; flex: 0 0 auto; }
+.inactive-info { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.inactive-info small { color: var(--mid); font-size: .75rem; }
+.btn-reactivate { flex: 0 0 auto; padding: .45rem .8rem; font-size: .85rem; }
+
 /* Ligne « Article actif » dans le modal */
 .art-active-row {
   display: flex; align-items: center; gap: .5rem;

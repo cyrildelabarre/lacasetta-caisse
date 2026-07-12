@@ -715,6 +715,50 @@ function goToCaisse() {
 document.getElementById('menu-add-article').addEventListener('click', () => {
   closeMenu(); goToCaisse(); openArticleModal();
 });
+document.getElementById('menu-inactive').addEventListener('click', () => {
+  closeMenu(); openInactiveModal();
+});
+
+// ── Articles inactifs : lister et réactiver ───────────────────────────────────
+function openInactiveModal() {
+  renderInactiveList();
+  document.getElementById('modal-inactive').classList.add('open');
+}
+function renderInactiveList() {
+  const el = document.getElementById('inactive-list');
+  const inactifs = articles.filter(a => a.active === false);
+  if (!inactifs.length) {
+    el.innerHTML = '<p class="empty-msg" style="padding:1rem 0">Aucun article inactif 🎉</p>';
+    return;
+  }
+  el.innerHTML = '';
+  inactifs.forEach(art => {
+    const row = document.createElement('div');
+    row.className = 'inactive-row';
+    row.innerHTML = `
+      <span class="inactive-emoji">${art.emoji || ''}</span>
+      <span class="inactive-info"><strong>${art.name}</strong><small>${art.category} · ${fmtEur(art.price)}</small></span>
+      <button class="btn-primary btn-reactivate" data-id="${art.id}">Réactiver</button>
+    `;
+    el.appendChild(row);
+  });
+  el.querySelectorAll('.btn-reactivate').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const art = articles.find(a => a.id === btn.dataset.id);
+      if (art) { art.active = true; saveArticles(); }
+      renderInactiveList();
+      renderCategories();
+      renderArticles();
+      showToast('Article réactivé.');
+    });
+  });
+}
+document.getElementById('btn-inactive-close').addEventListener('click', () => {
+  document.getElementById('modal-inactive').classList.remove('open');
+});
+document.getElementById('modal-inactive').addEventListener('click', e => {
+  if (e.target.id === 'modal-inactive') document.getElementById('modal-inactive').classList.remove('open');
+});
 document.getElementById('menu-edit-article').addEventListener('click', () => {
   closeMenu(); goToCaisse();
   if (editMode) toggleEditMode();

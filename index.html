@@ -277,9 +277,20 @@
         <button class="menu-item" id="menu-categories">🗂 Gérer les catégories<small>Renommer et changer l'ordre des onglets</small></button>
         <button class="menu-item" id="menu-pin">🔑 Changer le code PIN<small>Modifier le code de déverrouillage</small></button>
         <button class="menu-item" id="menu-add-article">➕ Ajouter un article<small>Créer un nouvel article dans le catalogue</small></button>
+        <button class="menu-item" id="menu-inactive">🚫 Articles inactifs<small>Voir et réactiver les articles masqués</small></button>
         <button class="menu-item menu-item-test" id="menu-testmode">🧪 Mode formation<small>Ventes de test isolées, non comptées</small></button>
       </div>
       <button class="btn-secondary" id="btn-menu-close" style="width:100%;margin-top:1rem">Fermer</button>
+    </div>
+  </div>
+
+  <!-- Modal articles inactifs -->
+  <div class="modal-overlay" id="modal-inactive">
+    <div class="modal" style="max-width:420px">
+      <h3>🚫 Articles inactifs</h3>
+      <p style="font-size:.85rem;color:var(--mid);margin:.2rem 0 .8rem">Ces articles sont masqués à la vente. Touchez « Réactiver » pour les réafficher.</p>
+      <div id="inactive-list" class="inactive-list"></div>
+      <button class="btn-secondary" id="btn-inactive-close" style="width:100%;margin-top:1rem">Fermer</button>
     </div>
   </div>
 
