@@ -452,13 +452,32 @@ function categories() {
   return ['Tous', ...orderedCategories()];
 }
 
+// Libellés courts + couleur par catégorie (les valeurs réelles servent au filtrage).
+const CAT_LABELS = {
+  'Tous': 'Tous', 'Pizzas grandes': 'Grandes', 'Pizzas petites': 'Petites',
+  'Suppléments': 'Supp', 'Desserts': 'Dessert'
+};
+const CAT_COLORS = {
+  'Tous': '#89310B', 'Pizzas grandes': '#2f7d8a', 'Pizzas petites': '#76894F',
+  'Suppléments': '#c9822b', 'Desserts': '#8e5572'
+};
+const CAT_PALETTE = ['#89310B', '#2f7d8a', '#76894F', '#c9822b', '#8e5572', '#4a6fa5', '#a5504a'];
+// Ordre d'affichage souhaité (les inconnues suivent, dans leur ordre existant).
+const CAT_ORDER = ['Pizzas grandes', 'Pizzas petites', 'Suppléments', 'Desserts'];
+
+function catLabel(cat) { return CAT_LABELS[cat] || cat; }
+function catColor(cat, i) { return CAT_COLORS[cat] || CAT_PALETTE[i % CAT_PALETTE.length]; }
+
 function renderCategories() {
   const el = document.getElementById('category-tabs');
   el.innerHTML = '';
-  categories().forEach(cat => {
+  const rank = c => { const i = CAT_ORDER.indexOf(c); return i === -1 ? 99 : i; };
+  const rest = orderedCategories().slice().sort((a, b) => rank(a) - rank(b));
+  ['Tous', ...rest].forEach((cat, i) => {
     const btn = document.createElement('button');
     btn.className = 'cat-btn' + (cat === activeCategory ? ' active' : '');
-    btn.textContent = cat;
+    btn.textContent = catLabel(cat);
+    btn.style.setProperty('--c', catColor(cat, i));
     btn.addEventListener('click', () => { activeCategory = cat; renderCategories(); renderArticles(); });
     el.appendChild(btn);
   });

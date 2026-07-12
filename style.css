@@ -213,27 +213,34 @@ header {
 .categories {
   display: flex;
   gap: .4rem;
-  padding: .8rem 1rem .6rem;
-  flex-wrap: wrap;
+  padding: .7rem .8rem .6rem;
+  flex-wrap: nowrap;               /* tout sur une seule ligne */
   border-bottom: 1px solid var(--border);
 }
 
 .cat-btn {
-  border: 1px solid var(--border);
-  background: var(--white);
-  border-radius: 40px;
-  padding: .5rem 1.6rem;
-  font-size: 1.05rem;
-  font-weight: 600;
+  flex: 1 1 0;                     /* 5 boutons se partagent la largeur à parts égales */
+  min-width: 0;
+  border: 2px solid transparent;
+  background: var(--c, var(--terracotta));
+  color: #fff;
+  border-radius: 12px;            /* rectangulaire (coins légèrement arrondis) */
+  padding: .7rem .3rem;
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all .15s;
+  opacity: .72;                    /* catégories inactives légèrement estompées */
+  transition: opacity .15s, transform .1s, box-shadow .15s;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-.cat-btn.active, .cat-btn:hover {
-  background: var(--terracotta);
-  color: var(--white);
-  border-color: var(--terracotta);
+.cat-btn:hover { opacity: 1; }
+.cat-btn.active {
+  opacity: 1;
+  border-color: rgba(0, 0, 0, .18);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .22);
+  transform: translateY(-1px);
 }
 
 .articles-grid {
