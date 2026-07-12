@@ -1939,7 +1939,7 @@ function showToast(msg) {
 // ══════════════════════════════════════════
 //  GOOGLE SHEETS — SYNCHRONISATION
 // ══════════════════════════════════════════
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxpmtErNE_mKk52rlHc01vHVpV_nRHaxlAdGk71SmjQklk25N7miEseHF0nnt8uYMv_/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxLLOjnSFDfx5DapiThy6zis016rppz6N7cW6fcvv_IUB6GJI1aUJBI_SHiVmUgY49_/exec';
 
 // Indicateur visuel dans le header
 const syncIndicator = (() => {
