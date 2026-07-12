@@ -1005,18 +1005,43 @@ document.getElementById('btn-modal-save').addEventListener('click', () => {
 
 // ══════════════════ MÉMO ══════════════════════════════════════════════════════
 
-let cancelMode = false; // mode « annuler une vente » (affiche les ✕ par ligne)
-
 const memoDateInput = document.getElementById('memo-date');
 memoDateInput.value = todayISO();
 
-document.getElementById('btn-cancel-mode').addEventListener('click', () => {
-  cancelMode = !cancelMode;
-  document.getElementById('btn-cancel-mode').classList.toggle('active', cancelMode);
-  renderMemo();
-  if (cancelMode) showToast('Touchez la croix ✕ de la vente à annuler.');
-});
 memoDateInput.addEventListener('change', () => { renderMemo(); autoLoadSheets(); });
+
+// Désarme (referme) toutes les lignes en attente d'annulation.
+function disarmMemoRows() {
+  document.querySelectorAll('#memo-tbody tr.armed').forEach(tr => tr.classList.remove('armed'));
+}
+// Referme les lignes si on touche ailleurs.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#memo-tbody tr.armed')) disarmMemoRows();
+});
+
+// Rend une ligne « glissable vers la gauche » : révèle l'état rouge + poubelle.
+function attachSwipeToCancel(tr, id) {
+  let x0 = 0, y0 = 0, horizontal = false;
+  tr.addEventListener('touchstart', (e) => {
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; horizontal = false;
+  }, { passive: true });
+  tr.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    const dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) horizontal = true;
+  }, { passive: true });
+  tr.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0, dy = t.clientY - y0;
+    if (!horizontal) return;
+    if (dx < -45 && Math.abs(dx) > Math.abs(dy)) {       // glissé vers la gauche → armer
+      disarmMemoRows();
+      tr.classList.add('armed');
+    } else if (dx > 45) {                                // glissé vers la droite → refermer
+      tr.classList.remove('armed');
+    }
+  });
+}
 
 function txsForDate(dateStr) {
   return reportSource().filter(t => t.date.slice(0, 10) === dateStr);
@@ -1061,21 +1086,29 @@ function renderMemo() {
       ? '<span class="badge-pay badge-annule">Annulé</span>'
       : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte'}[tx.method] ?? tx.method}</span>`;
     const tr = document.createElement('tr');
+    tr.dataset.id = tx.id;
     tr.innerHTML = `
       <td class="${cls}">${txs.length - i}</td>
       <td class="${cls}">${fmtTime(tx.date)}</td>
       <td class="${cls}" style="max-width:260px;word-break:break-word">${linesStr}</td>
       <td>${badge}</td>
       <td class="${cls}" style="font-weight:700">${fmtEur(tx.total)}</td>
-      <td>${tx.cancelled ? '' : `
+      <td class="memo-actions">${tx.cancelled ? '' : `
         <button class="btn-reopen-tx" data-id="${tx.id}" title="Rouvrir : ajouter des articles">🔁</button>
-        ${cancelMode ? `<button class="btn-cancel-tx" data-id="${tx.id}" title="Annuler cette vente">✕</button>` : ''}`}</td>
+        <button class="btn-del-tx" data-id="${tx.id}" title="Confirmer l'annulation">🗑️</button>`}</td>
     `;
     tbody.appendChild(tr);
+    if (!tx.cancelled) attachSwipeToCancel(tr, tx.id);
   });
 
-  tbody.querySelectorAll('.btn-cancel-tx').forEach(btn => {
-    btn.addEventListener('click', () => openCancelModal(btn.dataset.id));
+  tbody.querySelectorAll('.btn-del-tx').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      cancelTransaction(id);
+      renderMemo();
+      showToast('Vente annulée.');
+    });
   });
   tbody.querySelectorAll('.btn-reopen-tx').forEach(btn => {
     btn.addEventListener('click', () => reopenTransaction(btn.dataset.id));
