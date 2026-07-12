@@ -124,7 +124,7 @@ const LS = {
 // En mode formation, les ventes vont dans un espace LOCAL séparé et sont
 // synchronisées vers un déploiement Apps Script de TEST (Sheet de test) — jamais
 // vers la prod. Le catalogue (articles/catégories) reste partagé entre les modes.
-const PROD_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxLLOjnSFDfx5DapiThy6zis016rppz6N7cW6fcvv_IUB6GJI1aUJBI_SHiVmUgY49_/exec';
+const PROD_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzsusvqhOlstPuuigFtTq2KHwT1QS7F-khbWjPbsXfKoTSssCAKUnE5sk-l2A3F-Tg/exec';
 const TEST_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzMZ1t__JojJAREbp7uP6uYyFiVurIIAAT95TwIIUgshJX_sWMBRHjh6vgqkG7B3ig0OA/exec';
 
 function isTestMode() { return LS.get('pos_testmode', false) === true; }
@@ -259,7 +259,11 @@ function pullCatalogue() {
     const remoteAt = data.updatedAt || '';
     if (data.articles.length === 0) {
       // Cloud vide : le 1er iPad amorce le catalogue partagé avec ses articles.
-      if (articles.length && !remoteAt) pushCatalogue();
+      if (articles.length && !remoteAt) {
+        catalogueUpdatedAt = new Date().toISOString();
+        LS.set('pos_catalogue_updatedAt', catalogueUpdatedAt);
+        pushCatalogue();
+      }
       return;
     }
     // On adopte le catalogue distant s'il est plus récent et qu'on n'a pas d'édition locale en attente.
