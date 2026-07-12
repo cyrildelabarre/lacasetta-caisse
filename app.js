@@ -1141,7 +1141,7 @@ function renderMemo() {
       <td>${badge}</td>
       <td class="${cls}" style="font-weight:700">${fmtEur(tx.total)}</td>
       <td class="memo-actions">${tx.cancelled ? '' : `
-        <button class="btn-reopen-tx" data-id="${tx.id}" title="Rouvrir : ajouter des articles">🔁</button>
+        <button class="btn-reopen-tx" data-id="${tx.id}" title="Rouvrir : ajouter des articles à cette vente">🔁 <span>Complément</span></button>
         <button class="btn-del-tx" data-id="${tx.id}" title="Confirmer l'annulation">🗑️</button>`}</td>
     `;
     tbody.appendChild(tr);

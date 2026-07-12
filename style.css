@@ -720,13 +720,22 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 /* Swipe-to-cancel : ligne armée en rouge + poubelle révélée */
 .memo-hint { font-size: .78rem; color: var(--mid); font-style: italic; }
 .memo-actions { text-align: right; white-space: nowrap; }
-.memo-actions .btn-reopen-tx,
-.memo-actions .btn-del-tx {
-  background: none; border: none; cursor: pointer;
-  font-size: 1.1rem; padding: .1rem .3rem; line-height: 1;
+/* Bouton « Complément » : vraie pilule tactile, large et facile à cliquer */
+.memo-actions .btn-reopen-tx {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: var(--olive-bg); color: var(--olive);
+  border: 1px solid var(--olive-light); border-radius: 10px;
+  font-size: .9rem; font-weight: 600; line-height: 1;
+  padding: .55rem .85rem; min-height: 42px;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: background .15s, color .15s, transform .1s;
 }
+.memo-actions .btn-reopen-tx:hover { background: var(--olive); color: #fff; }
+.memo-actions .btn-reopen-tx:active { transform: scale(.97); }
 .memo-actions .btn-del-tx {
   display: none;
+  background: none; border: none; cursor: pointer;
+  font-size: 1.1rem; padding: .1rem .3rem; line-height: 1;
   transform: translateX(6px);
   transition: transform .18s ease;
 }
