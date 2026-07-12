@@ -288,6 +288,27 @@ header {
 .menu-item small { display: block; font-weight: 400; font-size: .75rem; color: var(--mid); margin-top: 2px; }
 .menu-item:hover { border-color: var(--terracotta); background: #fff4ec; }
 
+/* Item « Mode formation » + état actif */
+.menu-item-test { background: #fff6e6; border-color: #f0c675; }
+.menu-item-test:hover { background: #ffedcc; border-color: #e0a93a; }
+.menu-item-test.active { background: #ffe1b3; border-color: #e0a93a; color: #7a4e00; }
+
+/* Bannière mode formation : bien visible, collée en haut, au-dessus de tout */
+#test-banner {
+  display: none;
+  position: sticky; top: 0; z-index: 2000;
+  text-align: center;
+  padding: .5rem 1rem;
+  font-weight: 800; font-size: .9rem; letter-spacing: .03em;
+  color: #5a3b00;
+  background: repeating-linear-gradient(45deg, #ffcf4d, #ffcf4d 14px, #ffdd80 14px, #ffdd80 28px);
+  border-bottom: 2px solid #e0a93a;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+}
+#test-banner.show { display: block; }
+/* Liseré ambré autour de l'app quand le mode formation est actif */
+body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
+
 .banner-btn {
   background: var(--olive); color: #fff; border: none; border-radius: 6px;
   padding: .25rem .7rem; font-size: .8rem; font-weight: 700; cursor: pointer;

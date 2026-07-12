@@ -120,6 +120,17 @@ const LS = {
   set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
 };
 
+// ── Mode formation / test ─────────────────────────────────────────────────────
+// En mode formation, les ventes vont dans un espace LOCAL séparé et sont
+// synchronisées vers un déploiement Apps Script de TEST (Sheet de test) — jamais
+// vers la prod. Le catalogue (articles/catégories) reste partagé entre les modes.
+const PROD_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxLLOjnSFDfx5DapiThy6zis016rppz6N7cW6fcvv_IUB6GJI1aUJBI_SHiVmUgY49_/exec';
+const TEST_SHEETS_URL = ''; // ← URL /exec du déploiement de TEST (à renseigner)
+
+function isTestMode() { return LS.get('pos_testmode', false) === true; }
+function sheetsUrl()  { return isTestMode() ? TEST_SHEETS_URL : PROD_SHEETS_URL; }
+function txKey()      { return isTestMode() ? 'pos_transactions_test' : 'pos_transactions'; }
+
 // ── State ────────────────────────────────────────────────────────────────────
 const CATALOGUE_VERSION = 2;
 let articles = (LS.get('pos_catalogue_version', 0) < CATALOGUE_VERSION)
@@ -190,8 +201,8 @@ function fmtEur(n) {
 }
 
 // ── Transactions store ───────────────────────────────────────────────────────
-function getTransactions() { return LS.get('pos_transactions', []); }
-function saveTransactions(txs) { LS.set('pos_transactions', txs); }
+function getTransactions() { return LS.get(txKey(), []); }
+function saveTransactions(txs) { LS.set(txKey(), txs); }
 
 function addTransaction(tx) {
   const txs = getTransactions();
@@ -253,6 +264,7 @@ function cancelTransaction(id) {
 
 // Marque le ticket « Annulé » dans le Google Sheet (via JSONP).
 function cancelOnSheets(id, wasSynced) {
+  if (!sheetsUrl()) return;   // mode test sans backend configuré : rien à propager
   const cbName = '__cancelCb' + Date.now();
   let script;
   const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
@@ -264,7 +276,7 @@ function cancelOnSheets(id, wasSynced) {
     else if (!wasSynced) { /* pas encore dans le Sheet : partira en « Annulé » à la sync */ }
   };
   script = document.createElement('script');
-  script.src = SHEETS_URL + '?action=cancel&id=' + encodeURIComponent(id) + '&callback=' + cbName + '&t=' + Date.now();
+  script.src = sheetsUrl() + '?action=cancel&id=' + encodeURIComponent(id) + '&callback=' + cbName + '&t=' + Date.now();
   script.onerror = cleanup;
   document.body.appendChild(script);
 }
@@ -593,7 +605,7 @@ document.getElementById('btn-banner-done').addEventListener('click', () => {
 const menuModal = document.getElementById('modal-menu');
 function closeMenu() { menuModal.classList.remove('open'); }
 
-document.getElementById('btn-menu').addEventListener('click', () => menuModal.classList.add('open'));
+document.getElementById('btn-menu').addEventListener('click', () => { updateTestMenuLabel(); menuModal.classList.add('open'); });
 document.getElementById('btn-menu-close').addEventListener('click', closeMenu);
 menuModal.addEventListener('click', e => { if (e.target === menuModal) closeMenu(); });
 
@@ -621,6 +633,41 @@ document.getElementById('menu-categories').addEventListener('click', () => {
 document.getElementById('menu-pin').addEventListener('click', () => {
   closeMenu(); openPinModal();
 });
+document.getElementById('menu-testmode').addEventListener('click', () => {
+  closeMenu();
+  setTestMode(!isTestMode());
+});
+
+// ── Mode formation : bannière, libellé du menu, bascule ───────────────────────
+function renderTestBanner() {
+  const b = document.getElementById('test-banner');
+  if (b) b.classList.toggle('show', isTestMode());
+  document.body.classList.toggle('testmode', isTestMode());
+}
+function updateTestMenuLabel() {
+  const el = document.getElementById('menu-testmode');
+  if (!el) return;
+  const on = isTestMode();
+  el.innerHTML = (on ? '🧪 Quitter le mode formation' : '🧪 Mode formation')
+    + '<small>' + (on ? 'Actif — les ventes ne sont pas comptabilisées' : 'Ventes de test isolées, non comptées') + '</small>';
+  el.classList.toggle('active', on);
+}
+function setTestMode(on) {
+  LS.set('pos_testmode', !!on);
+  ticket = []; renderTicket();              // ne pas transférer un ticket d'un mode à l'autre
+  reportTransactions = null; reportLoadedAt = 0;  // forcer le rechargement depuis le bon backend
+  renderTestBanner();
+  updateTestMenuLabel();
+  renderMemo();
+  renderReporting();
+  renderDashboard();
+  setSyncStatus('idle');
+  autoLoadSheets();
+  syncToSheets();
+  showToast(on
+    ? '🧪 Mode formation activé — les ventes de test ne comptent pas.'
+    : '↩️ Mode formation désactivé — retour à la caisse réelle.');
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function dragGetCardAt(grid, x, y) {
@@ -1304,6 +1351,12 @@ function loadFromSheets(opts) {
   opts = opts || {};
   const btn = document.getElementById('btn-load-sheets');
   const src = document.getElementById('report-source');
+  // Mode formation sans backend de test configuré : on reste sur les ventes locales.
+  if (!sheetsUrl()) {
+    src.textContent = 'Source : cet appareil (mode formation local)';
+    rerenderActive();
+    return;
+  }
   const firstLoad = !reportTransactions;
   const cbName = '__sheetsCb' + Date.now();
   let script;
@@ -1335,7 +1388,7 @@ function loadFromSheets(opts) {
     if (!opts.auto) showToast(`☁️ ${n} ${mot} chargée${n > 1 ? 's' : ''} depuis Google Sheets.`);
   };
   script = document.createElement('script');
-  script.src = SHEETS_URL + '?action=transactions&callback=' + cbName + '&t=' + Date.now();
+  script.src = sheetsUrl() + '?action=transactions&callback=' + cbName + '&t=' + Date.now();
   script.onerror = () => fail('Échec du chargement depuis Google Sheets (réseau ?).');
   document.body.appendChild(script);
 }
@@ -1939,7 +1992,7 @@ function showToast(msg) {
 // ══════════════════════════════════════════
 //  GOOGLE SHEETS — SYNCHRONISATION
 // ══════════════════════════════════════════
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxLLOjnSFDfx5DapiThy6zis016rppz6N7cW6fcvv_IUB6GJI1aUJBI_SHiVmUgY49_/exec';
+// (URL de synchro : voir sheetsUrl() — bascule prod / test selon le mode formation)
 
 // Indicateur visuel dans le header
 const syncIndicator = (() => {
@@ -1970,11 +2023,13 @@ async function syncToSheets() {
   if (isSyncing) return;
   const pending = getTransactions().filter(t => !t.synced);
   if (!pending.length) { setSyncStatus('idle'); return; }
+  // Mode formation sans backend de test : on garde les ventes en local, pas d'envoi.
+  if (!sheetsUrl()) { setSyncStatus('idle'); return; }
 
   isSyncing = true;
   setSyncStatus('syncing');
   try {
-    const res = await fetch(SHEETS_URL, {
+    const res = await fetch(sheetsUrl(), {
       method: 'POST',
       body: JSON.stringify(pending),
     });
@@ -2021,6 +2076,8 @@ window.addTransaction = function(tx) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderCategories();
 renderArticles();
+renderTestBanner();   // restaure la bannière si le mode formation était actif
+updateTestMenuLabel();
 renderMemo();
 renderReporting();
 syncToSheets(); // sync au démarrage
