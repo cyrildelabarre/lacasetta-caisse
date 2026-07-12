@@ -1962,11 +1962,16 @@ function markSynced(ids) {
   saveTransactions(txs);
 }
 
-// Envoie les transactions non synchronisées à Google Sheets
+// Envoie les transactions non synchronisées à Google Sheets.
+// Garde anti-doublon : un seul envoi à la fois (plusieurs déclencheurs peuvent
+// se chevaucher — après-vente, retour réseau, relance périodique, avant-plan).
+let isSyncing = false;
 async function syncToSheets() {
+  if (isSyncing) return;
   const pending = getTransactions().filter(t => !t.synced);
   if (!pending.length) { setSyncStatus('idle'); return; }
 
+  isSyncing = true;
   setSyncStatus('syncing');
   try {
     const res = await fetch(SHEETS_URL, {
@@ -1983,6 +1988,8 @@ async function syncToSheets() {
     }
   } catch {
     setSyncStatus('error');
+  } finally {
+    isSyncing = false;
   }
 }
 
@@ -1990,6 +1997,19 @@ async function syncToSheets() {
 document.addEventListener('visibilitychange', () => {
   syncToSheets();
 });
+
+// Sync dès que le réseau revient (WiFi retrouvé, sans recharger l'app)
+window.addEventListener('online', () => {
+  setSyncStatus('syncing');
+  syncToSheets();
+});
+
+// Filet de sécurité : relance périodique tant qu'il reste des ventes en attente.
+// (L'événement « online » est peu fiable sur iOS Safari ; ce timer garantit la
+//  synchro dès que la connexion redevient réellement joignable.)
+setInterval(() => {
+  if (getTransactions().some(t => !t.synced)) syncToSheets();
+}, 15000);
 
 // Sync après chaque transaction validée
 const _origAddTransaction = addTransaction;
