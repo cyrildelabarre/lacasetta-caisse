@@ -35,9 +35,11 @@ const TEMP_RANGES = {                 // plages par type d'enceinte (comme le PO
 // ══════════════════════════════════════════════════════════════════════════════
 function installEtLancer() {
   installTriggers();
-  const b = backupNow();
-  const m = dailyArchive();
-  Logger.log('Installé. Sauvegarde : ' + b + '\nArchives : ' + JSON.stringify(m));
+  backupNow();
+  dailyArchive();
+  fillMissingInitials();  // complète « CB » sur les jours relevés sans initiales
+  dailyTempExport();      // export PDF/XLSX des relevés
+  Logger.log('Installé + première exécution complète (backup, archives, CB, export température).');
 }
 
 // Crée (ou recrée) le déclencheur quotidien vers 01h00.
