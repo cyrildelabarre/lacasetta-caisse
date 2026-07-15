@@ -874,7 +874,26 @@ function loadTempInto() {
   document.getElementById('temp-corrective').value = tempRec.corrective || '';
   renderTempGrid();
 }
-function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); }
+function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); scheduleTempPush(); }
+
+// Envoi des relevés vers Google Sheets : un onglet par enceinte (via la prod).
+function tempPayload() {
+  const e = encById(tempEnc);
+  const dayset = new Set([...Object.keys(tempRec.temps), ...Object.keys(tempRec.initialsByDay)]);
+  const days = [...dayset].sort((a, b) => a - b).map(d => ({
+    date: tempMonth + '-' + String(d).padStart(2, '0'),
+    temp: (d in tempRec.temps) ? tempRec.temps[d] : '',
+    initials: tempRec.initialsByDay[d] || ''
+  }));
+  return { tempSync: { enclosure: e ? e.name : tempEnc, type: e ? e.type : 'frigo', month: tempMonth, days } };
+}
+function pushTemperatures() {
+  const p = tempPayload();
+  if (!p.tempSync.days.length) return;
+  fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify(p) }).catch(() => {});
+}
+let tempPushTimer = null;
+function scheduleTempPush() { clearTimeout(tempPushTimer); tempPushTimer = setTimeout(pushTemperatures, 1500); }
 
 function renderTempGrid() {
   const table = document.getElementById('temp-grid');
@@ -984,6 +1003,7 @@ document.getElementById('btn-temp-save').addEventListener('click', () => {
   const day = new Date().getDate();  // jour du mois (aujourd'hui)
   tempRec.initialsByDay[day] = ini;
   persistTemp();
+  pushTemperatures();   // envoi immédiat vers Google Sheets
   renderTempGrid();
   showToast(`Relevé enregistré — initiales « ${ini} » ajoutées au jour ${day}.`);
 });

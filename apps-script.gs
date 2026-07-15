@@ -917,6 +917,13 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    // Relevés de température : un onglet par enceinte (frigo / congélateur).
+    if (data && !Array.isArray(data) && data.tempSync) {
+      const n = recordTemperatures(ss, data.tempSync);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, temps: n }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     const sheet = getOrCreateTransactionsSheet(ss);
     const txs   = Array.isArray(data) ? data : [data];
 
@@ -999,6 +1006,59 @@ function saveCatalogue(ss, articles, updatedAt) {
   if (rows.length) sh.getRange(2, 1, rows.length, CAT_HEADERS.length).setValues(rows);
   sh.setFrozenRows(1);
   return rows.length;
+}
+
+// ════════════════════════════════════════════
+//  RELEVÉS DE TEMPÉRATURE — un onglet par enceinte (frigo / congélateur)
+// ════════════════════════════════════════════
+const TEMP_HEADERS = ['Date', 'Température (°C)', 'Initiales', 'Type', 'Mis à jour le'];
+
+// Nom d'onglet sûr (les caractères interdits par Sheets sont retirés).
+function tempSheetName(name) {
+  const clean = String(name || 'Enceinte').replace(/[:\\\/?*\[\]]/g, ' ').trim().slice(0, 90);
+  return '🌡️ ' + (clean || 'Enceinte');
+}
+
+// Enregistre les températures quotidiennes d'une enceinte dans son propre onglet.
+// payload : { enclosure, type, month, days:[{date:'AAAA-MM-JJ', temp, initials}] }
+function recordTemperatures(ss, payload) {
+  if (!payload || !Array.isArray(payload.days)) return 0;
+  const sh = getOrCreateTempSheet(ss, tempSheetName(payload.enclosure));
+  const now = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+
+  // Index des lignes existantes par date (AAAA-MM-JJ) pour faire un upsert.
+  const lr = sh.getLastRow();
+  const index = {};
+  if (lr > 1) {
+    const dates = sh.getRange(2, 1, lr - 1, 1).getValues();
+    dates.forEach((r, i) => { index[dateKey(r[0])] = i + 2; });
+  }
+  let count = 0;
+  payload.days.forEach(d => {
+    if (!d || !d.date) return;
+    const row = [asDate(d.date), d.temp, d.initials || '', payload.type || '', now];
+    const at = index[d.date];
+    if (at) sh.getRange(at, 1, 1, TEMP_HEADERS.length).setValues([row]);
+    else { sh.appendRow(row); index[d.date] = sh.getLastRow(); }
+    count++;
+  });
+  sh.getRange('A2:A').setNumberFormat('dd/mm/yyyy');
+  return count;
+}
+
+function getOrCreateTempSheet(ss, name) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.appendRow(TEMP_HEADERS);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function dateKey(v) {
+  if (v === '' || v == null) return '';
+  const d = asDate(v);
+  return isNaN(d.getTime()) ? String(v) : Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
 }
 
 function doGet(e) {
