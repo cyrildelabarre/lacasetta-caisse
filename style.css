@@ -301,13 +301,24 @@ header {
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .temp-enc-tab.active { background: var(--terracotta); color: #fff; border-color: var(--terracotta); }
+.temp-enc-item { position: relative; display: inline-flex; }
+.temp-enc-item.editing .temp-enc-tab { animation: temp-wiggle .4s ease-in-out infinite alternate; }
+@keyframes temp-wiggle { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
+.temp-enc-del {
+  position: absolute; top: -8px; right: -8px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--danger); color: #fff; border: 2px solid #fff;
+  font-size: .9rem; font-weight: 800; line-height: 1; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
 .temp-enc-add {
   border: 1px dashed var(--terracotta); background: var(--white); color: var(--terracotta);
   border-radius: 10px; padding: .5rem .8rem; font-weight: 800; font-size: 1.1rem; cursor: pointer; line-height: 1;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .temp-enc-add:hover { background: var(--terracotta-bg); }
-#btn-temp-delete { flex: 0 0 auto; min-width: 0; padding: .55rem .8rem; }
+#btn-temp-edit { flex: 0 0 auto; min-width: 0; }
 .temp-type-choice { display: flex; gap: .6rem; margin-top: .3rem; }
 .temp-type-btn {
   flex: 1; text-align: left; background: var(--terracotta-bg); border: 2px solid var(--border);

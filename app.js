@@ -815,8 +815,9 @@ function encById(id)  { return getEnclosures().find(e => e.id === id); }
 function encTemps(id) { const e = encById(id); return TEMP_RANGES[(e && e.type) || 'frigo']; }
 function encIcon(type){ return type === 'congelateur' ? '❄️' : '🧊'; }
 
-let tempEnc   = (getEnclosures()[0] || {}).id || 'frigo_cuisine';
-let tempMonth = todayISO().slice(0, 7); // AAAA-MM
+let tempEnc      = (getEnclosures()[0] || {}).id || 'frigo_cuisine';
+let tempMonth    = todayISO().slice(0, 7); // AAAA-MM
+let tempEditMode = false;                  // mode « modifier les enceintes » (affiche les ×)
 
 // Migration : les anciens relevés « frigo|… » deviennent « frigo_cuisine|… ».
 (function migrateTempKeys() {
@@ -853,10 +854,16 @@ function openTempModal(enc) {
 function renderTempTabs() {
   const wrap = document.getElementById('temp-enc-tabs');
   wrap.innerHTML = getEnclosures().map(e =>
-    `<button class="temp-enc-tab${e.id === tempEnc ? ' active' : ''}" data-enc="${e.id}">${encIcon(e.type)} ${escapeHtml(e.name)}</button>`
+    `<span class="temp-enc-item${tempEditMode ? ' editing' : ''}">` +
+      `<button class="temp-enc-tab${e.id === tempEnc ? ' active' : ''}" data-enc="${e.id}">${encIcon(e.type)} ${escapeHtml(e.name)}</button>` +
+      (tempEditMode ? `<button class="temp-enc-del" data-enc="${e.id}" title="Supprimer cette enceinte">×</button>` : '') +
+    '</span>'
   ).join('') + '<button class="temp-enc-add" id="temp-enc-add" title="Ajouter une enceinte">＋</button>';
   wrap.querySelectorAll('.temp-enc-tab').forEach(b => b.addEventListener('click', () => { tempEnc = b.dataset.enc; loadTempInto(); }));
+  wrap.querySelectorAll('.temp-enc-del').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); deleteEnclosure(b.dataset.enc); }));
   document.getElementById('temp-enc-add').addEventListener('click', openAddEnclosure);
+  const editBtn = document.getElementById('btn-temp-edit');
+  if (editBtn) editBtn.textContent = tempEditMode ? '✓ Terminer' : '✏️ Modifier';
 }
 function loadTempInto() {
   tempRec = getTempRecord(tempEnc, tempMonth);
@@ -953,19 +960,23 @@ document.getElementById('temp-add-ok').addEventListener('click', () => {
   loadTempInto();
   showToast(`Enceinte « ${name} » ajoutée.`);
 });
-document.getElementById('btn-temp-delete').addEventListener('click', () => {
-  const e = encById(tempEnc);
+document.getElementById('btn-temp-edit').addEventListener('click', () => {
+  tempEditMode = !tempEditMode;
+  renderTempTabs();
+});
+function deleteEnclosure(id) {
+  const e = encById(id);
   if (!e) return;
   if (getEnclosures().length <= 1) { showToast('Gardez au moins une enceinte.'); return; }
   if (!confirm(`Supprimer l'enceinte « ${e.name} » et tous ses relevés ?`)) return;
-  saveEnclosures(getEnclosures().filter(x => x.id !== tempEnc));
+  saveEnclosures(getEnclosures().filter(x => x.id !== id));
   const all = LS.get('pos_temp_records', {});
-  Object.keys(all).forEach(k => { if (k.indexOf(tempEnc + '|') === 0) delete all[k]; });
+  Object.keys(all).forEach(k => { if (k.indexOf(id + '|') === 0) delete all[k]; });
   LS.set('pos_temp_records', all);
-  tempEnc = (getEnclosures()[0] || {}).id;
+  if (tempEnc === id) tempEnc = (getEnclosures()[0] || {}).id;
   loadTempInto();
   showToast('Enceinte supprimée.');
-});
+}
 document.getElementById('btn-temp-save').addEventListener('click', () => {
   // Tamponne les initiales du champ dans la colonne du jour courant.
   const ini = (document.getElementById('temp-initials').value || 'CB').trim();
