@@ -1061,6 +1061,24 @@ function dateKey(v) {
   return isNaN(d.getTime()) ? String(v) : Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
 }
 
+// Renvoie tous les relevés de température (un objet par enceinte) pour que le POS
+// les recharge à l'ouverture, comme les ventes.
+function getAllTemperatures(ss) {
+  const sheets = ss.getSheets().filter(s => s.getName().indexOf('🌡️ ') === 0);
+  return sheets.map(sh => {
+    const vals = sh.getDataRange().getValues();
+    let type = 'frigo';
+    const entries = [];
+    vals.slice(1).forEach(r => {
+      const date = dateKey(r[0]);
+      if (!date) return;
+      if (String(r[3]).toLowerCase() === 'congelateur') type = 'congelateur';
+      entries.push({ date: date, temp: r[1], initials: r[2] });
+    });
+    return { name: sh.getName().replace('🌡️ ', ''), type: type, entries: entries };
+  });
+}
+
 function doGet(e) {
   const action = e && e.parameter ? e.parameter.action : '';
   const cb     = e && e.parameter ? e.parameter.callback : '';
@@ -1078,6 +1096,8 @@ function doGet(e) {
   } else if (action === 'catalogue') {
     const c = getCatalogue(getOrCreateSpreadsheet());
     payload = { ok: true, articles: c.articles, updatedAt: c.updatedAt };
+  } else if (action === 'temperatures') {
+    payload = { ok: true, enclosures: getAllTemperatures(getOrCreateSpreadsheet()) };
   } else {
     payload = { ok: true };
   }

@@ -895,6 +895,49 @@ function pushTemperatures() {
 let tempPushTimer = null;
 function scheduleTempPush() { clearTimeout(tempPushTimer); tempPushTimer = setTimeout(pushTemperatures, 1500); }
 
+// Récupère les relevés depuis Google Sheets au démarrage (comme les ventes) : les
+// jours présents dans le cloud écrasent le local ; les jours locaux non encore
+// synchronisés sont conservés (le cloud ne les référence pas encore).
+let tempPulling = false;
+function pullTemperatures() {
+  if (tempPulling) return;
+  tempPulling = true;
+  const cbName = '__tempCb' + Date.now();
+  let script;
+  const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+    if (script) script.remove(); tempPulling = false; clearTimeout(timer); };
+  const timer = setTimeout(cleanup, 20000);
+  window[cbName] = data => {
+    cleanup();
+    if (!data || !data.ok || !Array.isArray(data.enclosures)) return;
+    let list = getEnclosures().slice();
+    const all = LS.get('pos_temp_records', {});
+    data.enclosures.forEach(cloud => {
+      // Trouve (ou crée) l'enceinte locale correspondant au nom.
+      let enc = list.find(e => (e.name || '').toLowerCase() === (cloud.name || '').toLowerCase());
+      if (!enc) { enc = { id: 'enc_' + uid(), name: cloud.name, type: cloud.type || 'frigo' }; list.push(enc); }
+      (cloud.entries || []).forEach(en => {
+        if (!en.date) return;
+        const month = en.date.slice(0, 7), day = +en.date.slice(8, 10);
+        const key = enc.id + '|' + month;
+        const rec = all[key] || { temps: {}, initials: '', corrective: '', initialsByDay: {} };
+        if (!rec.initialsByDay) rec.initialsByDay = {};
+        if (en.temp !== '' && en.temp != null) rec.temps[day] = Number(en.temp);
+        if (en.initials) rec.initialsByDay[day] = en.initials;
+        all[key] = rec;
+      });
+    });
+    saveEnclosures(list);
+    LS.set('pos_temp_records', all);
+    // rafraîchit la vue si le modal est ouvert
+    if (document.getElementById('modal-temp').classList.contains('open')) loadTempInto();
+  };
+  script = document.createElement('script');
+  script.src = PROD_SHEETS_URL + '?action=temperatures&callback=' + cbName + '&t=' + Date.now();
+  script.onerror = cleanup;
+  document.body.appendChild(script);
+}
+
 function renderTempGrid() {
   const table = document.getElementById('temp-grid');
   const temps = encTemps(tempEnc);
@@ -2835,6 +2878,7 @@ renderTestBanner();   // restaure la bannière si le mode formation était actif
 updateTestMenuLabel();
 renderMemo();
 renderReporting();
-syncToSheets();  // sync des ventes au démarrage
-pullCatalogue(); // récupère le catalogue partagé au démarrage
+syncToSheets();      // sync des ventes au démarrage
+pullCatalogue();     // récupère le catalogue partagé au démarrage
+pullTemperatures();  // récupère les relevés de température (comme les ventes)
 if (_suppMerged) pushCatalogue();  // propage la fusion au cloud
