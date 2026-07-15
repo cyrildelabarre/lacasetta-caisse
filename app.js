@@ -797,12 +797,26 @@ document.getElementById('modal-inactive').addEventListener('click', e => {
 });
 
 // ── Relevés de température (HACCP) : frigo & congélateur ───────────────────────
+const TEMP_POS = [8, 7, 6, 5, 4, 3, 2, 1, 0];
 const TEMP_ENCLOSURES = {
-  frigo:       { label: '🧊 Frigo (positives)',       temps: [8, 7, 6, 5, 4, 3, 2, 1, 0] },
-  congelateur: { label: '❄️ Congélateur (négatives)', temps: [-14, -15, -16, -17, -18, -19, -20, -21, -22] }
+  frigo_cuisine: { label: '🧊 Frigo cuisine',         temps: TEMP_POS },
+  frigo_timbre:  { label: '🧊 Frigo timbre',          temps: TEMP_POS },
+  frigo_camion:  { label: '🧊 Frigo camion',          temps: TEMP_POS },
+  congelateur:   { label: '❄️ Congélateur (négatives)', temps: [-14, -15, -16, -17, -18, -19, -20, -21, -22] }
 };
-let tempEnc   = 'frigo';
+let tempEnc   = 'frigo_cuisine';
 let tempMonth = todayISO().slice(0, 7); // AAAA-MM
+
+// Migration : les anciens relevés « frigo|… » deviennent « frigo_cuisine|… ».
+(function migrateTempKeys() {
+  const all = LS.get('pos_temp_records', null);
+  if (!all) return;
+  let changed = false;
+  Object.keys(all).forEach(k => {
+    if (k.indexOf('frigo|') === 0) { all['frigo_cuisine|' + k.slice(6)] = all[k]; delete all[k]; changed = true; }
+  });
+  if (changed) LS.set('pos_temp_records', all);
+})();
 
 function tempKey(enc, month) { return enc + '|' + month; }
 function getTempRecord(enc, month) {
@@ -819,7 +833,7 @@ function saveTempRecord(enc, month, rec) {
 let tempRec = null; // enregistrement en cours d'édition
 
 function openTempModal(enc) {
-  tempEnc = enc || 'frigo';
+  tempEnc = enc || 'frigo_cuisine';
   tempMonth = todayISO().slice(0, 7);
   loadTempInto();
   document.getElementById('temp-month').value = tempMonth;
@@ -876,7 +890,7 @@ function renderTempGrid() {
   });
 }
 
-document.getElementById('menu-temp').addEventListener('click', () => { closeMenu(); openTempModal('frigo'); });
+document.getElementById('menu-temp').addEventListener('click', () => { closeMenu(); openTempModal('frigo_cuisine'); });
 document.querySelectorAll('.temp-enc-tab').forEach(b => {
   b.addEventListener('click', () => { tempEnc = b.dataset.enc; loadTempInto(); });
 });
