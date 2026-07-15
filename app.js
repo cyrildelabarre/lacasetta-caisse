@@ -1048,6 +1048,7 @@ document.getElementById('btn-temp-save').addEventListener('click', () => {
   persistTemp();
   pushTemperatures();   // envoi immédiat vers Google Sheets
   renderTempGrid();
+  document.getElementById('modal-temp').classList.remove('open'); // ferme le modal
   showToast(`Relevé enregistré — initiales « ${ini} » ajoutées au jour ${day}.`);
 });
 document.getElementById('btn-temp-close').addEventListener('click', () => document.getElementById('modal-temp').classList.remove('open'));
