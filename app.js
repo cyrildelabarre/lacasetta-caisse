@@ -874,7 +874,7 @@ function loadTempInto() {
   document.getElementById('temp-corrective').value = tempRec.corrective || '';
   renderTempGrid();
 }
-function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); scheduleTempPush(); }
+function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); } // envoi cloud seulement au clic « Enregistrer »
 
 // Envoi des relevés vers Google Sheets : un onglet par enceinte (via la prod).
 function tempPayload() {
@@ -892,8 +892,6 @@ function pushTemperatures() {
   if (!p.tempSync.days.length) return;
   fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify(p) }).catch(() => {});
 }
-let tempPushTimer = null;
-function scheduleTempPush() { clearTimeout(tempPushTimer); tempPushTimer = setTimeout(pushTemperatures, 1500); }
 
 // Récupère les relevés depuis Google Sheets au démarrage (comme les ventes) : les
 // jours présents dans le cloud écrasent le local ; les jours locaux non encore
