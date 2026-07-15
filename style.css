@@ -322,6 +322,13 @@ header {
 .temp-cell { width: 26px; height: 30px; cursor: pointer; color: var(--terracotta); font-size: .9rem; line-height: 1; }
 .temp-cell.on { background: var(--olive-bg); color: var(--olive); font-weight: 700; }
 .temp-cell:active { background: var(--terracotta-bg); }
+.temp-init-row th { border-top: 2px solid var(--terracotta); }
+.temp-init-cell {
+  cursor: pointer; font-size: .6rem; font-weight: 700; color: var(--terracotta);
+  height: 24px; padding: 0 1px; white-space: nowrap;
+}
+.temp-init-cell.on { background: var(--terracotta-bg); }
+.temp-init-cell:active { background: var(--olive-bg); }
 .temp-actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
 .temp-actions button { flex: 1; min-width: 160px; }
 

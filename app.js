@@ -807,7 +807,9 @@ let tempMonth = todayISO().slice(0, 7); // AAAA-MM
 function tempKey(enc, month) { return enc + '|' + month; }
 function getTempRecord(enc, month) {
   const all = LS.get('pos_temp_records', {});
-  return all[tempKey(enc, month)] || { name: '', temps: {}, initials: '', corrective: '' };
+  const rec = all[tempKey(enc, month)] || { name: '', temps: {}, initials: '', corrective: '' };
+  if (!rec.initialsByDay) rec.initialsByDay = {}; // initiales par jour (une case par jour)
+  return rec;
 }
 function saveTempRecord(enc, month, rec) {
   const all = LS.get('pos_temp_records', {});
@@ -828,7 +830,7 @@ function loadTempInto() {
   document.querySelectorAll('.temp-enc-tab').forEach(b => b.classList.toggle('active', b.dataset.enc === tempEnc));
   document.getElementById('temp-title').textContent = '🌡️ ' + TEMP_ENCLOSURES[tempEnc].label;
   document.getElementById('temp-name').value       = tempRec.name || '';
-  document.getElementById('temp-initials').value   = tempRec.initials || '';
+  document.getElementById('temp-initials').value   = tempRec.initials || 'CB'; // CB par défaut
   document.getElementById('temp-corrective').value = tempRec.corrective || '';
   renderTempGrid();
 }
@@ -847,6 +849,9 @@ function renderTempGrid() {
         return `<td class="temp-cell${on ? ' on' : ''}" data-day="${d}" data-temp="${t}">${on ? '●' : ''}</td>`;
       }).join('') + '</tr>';
   });
+  // Ligne des initiales : une case par jour (renseignée au clic ou via Enregistrer).
+  html += `<tr class="temp-init-row"><th class="temp-rowlabel">Initiales</th>` +
+    days.map(d => `<td class="temp-init-cell${tempRec.initialsByDay[d] ? ' on' : ''}" data-day="${d}">${tempRec.initialsByDay[d] || ''}</td>`).join('') + '</tr>';
   html += '</tbody>';
   table.innerHTML = html;
   table.querySelectorAll('.temp-cell').forEach(cell => {
@@ -854,6 +859,17 @@ function renderTempGrid() {
       const d = +cell.dataset.day, t = +cell.dataset.temp;
       if (tempRec.temps[d] === t) delete tempRec.temps[d]; // re-toucher = effacer
       else tempRec.temps[d] = t;                            // sinon = déplacer la pastille du jour
+      persistTemp();
+      renderTempGrid();
+    });
+  });
+  // Clic sur une case d'initiales : y met les initiales du champ, re-clic = efface.
+  table.querySelectorAll('.temp-init-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const d = +cell.dataset.day;
+      const ini = (document.getElementById('temp-initials').value || 'CB').trim();
+      if (tempRec.initialsByDay[d]) delete tempRec.initialsByDay[d];
+      else tempRec.initialsByDay[d] = ini;
       persistTemp();
       renderTempGrid();
     });
@@ -881,7 +897,16 @@ function shiftTempMonth(n) {
     persistTemp();
   });
 });
-document.getElementById('btn-temp-save').addEventListener('click', () => { persistTemp(); showToast('Relevé enregistré.'); });
+document.getElementById('btn-temp-save').addEventListener('click', () => {
+  // Tamponne les initiales du champ dans la colonne du jour courant.
+  const ini = (document.getElementById('temp-initials').value || 'CB').trim();
+  tempRec.initials = ini;
+  const day = new Date().getDate();  // jour du mois (aujourd'hui)
+  tempRec.initialsByDay[day] = ini;
+  persistTemp();
+  renderTempGrid();
+  showToast(`Relevé enregistré — initiales « ${ini} » ajoutées au jour ${day}.`);
+});
 document.getElementById('btn-temp-close').addEventListener('click', () => document.getElementById('modal-temp').classList.remove('open'));
 document.getElementById('btn-temp-print').addEventListener('click', () => {
   const monthLabel = new Date(tempMonth + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
