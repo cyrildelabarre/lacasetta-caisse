@@ -24,6 +24,11 @@ const KEEP_BACKUPS   = 30;            // nombre de copies de sauvegarde conserv�
 const BACKUP_FOLDER  = 'La Casetta — Sauvegardes';
 const ARCHIVE_FOLDER = 'La Casetta — Archives mensuelles';
 const COL_DATE       = 1;             // colonne B (0-based) = Date, pour filtrer par mois
+const TEMP_EXPORT_FOLDER = 'La Casetta — Relevés température'; // exports PDF/XLSX mensuels
+const TEMP_RANGES = {                 // plages par type d'enceinte (comme le POS)
+  frigo:       [8, 7, 6, 5, 4, 3, 2, 1, 0],
+  congelateur: [-14, -15, -16, -17, -18, -19, -20, -21, -22]
+};
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  À EXÉCUTER UNE FOIS
@@ -49,6 +54,15 @@ function installTriggers() {
 function dailyJob() {
   backupNow();
   dailyArchive();
+  dailyTempExport();
+}
+
+// Régénère l'export des relevés de température du mois en cours et précédent.
+function dailyTempExport() {
+  return {
+    courant:   exportTempMonth(ym(new Date())),
+    precedent: exportTempMonth(ym(addMonths(new Date(), -1)))
+  };
 }
 
 // Régénère le fichier du mois en cours ET du mois précédent (pour rattraper une
@@ -111,6 +125,90 @@ function exportMonth(mois) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  RELEVÉS DE TEMPÉRATURE — export mensuel PDF + XLSX (vue grille du POS)
+// ══════════════════════════════════════════════════════════════════════════════
+function exportTempMonth(mois) {
+  mois = mois || ym(new Date());
+  const master = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const tempSheets = master.getSheets().filter(s => s.getName().indexOf('🌡️ ') === 0);
+  if (!tempSheets.length) return '';
+
+  const folder = getOrCreateFolder(TEMP_EXPORT_FOLDER);
+  const title  = 'La Casetta — Relevés température ' + mois;
+  let out = findByName(folder, title);
+  if (!out) { out = SpreadsheetApp.create(title); moveToFolder(DriveApp.getFileById(out.getId()), folder); }
+
+  // Repart d'un onglet temporaire propre.
+  const tmp = out.getSheets()[0];
+  tmp.setName('_tmp'); tmp.clear();
+  out.getSheets().forEach(s => { if (s.getSheetId() !== tmp.getSheetId()) out.deleteSheet(s); });
+
+  let any = false;
+  tempSheets.forEach(src => {
+    const grid = buildTempGrid(src, mois);
+    if (!grid) return;
+    any = true;
+    const encName = src.getName().replace('🌡️ ', '').slice(0, 90);
+    const sh = out.insertSheet(encName);
+    sh.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
+    sh.setFrozenRows(1); sh.setFrozenColumns(1);
+    sh.getRange(1, 1, 1, grid[0].length).setFontWeight('bold');
+    sh.getRange(1, 1, grid.length, 1).setFontWeight('bold');
+    sh.setColumnWidths(2, grid[0].length - 1, 26);
+  });
+  if (!any) return '';
+  if (out.getSheetByName('_tmp')) out.deleteSheet(out.getSheetByName('_tmp'));
+  SpreadsheetApp.flush();
+  exportSpreadsheetFile(out.getId(), folder, title);
+  shareFolders();
+  return out.getUrl();
+}
+
+// Construit la grille d'une enceinte pour un mois : T°C (lignes) × jours 1→31,
+// pastille ● à la température relevée, + ligne des initiales.
+function buildTempGrid(src, mois) {
+  const vals = src.getDataRange().getValues(); // Date, Température, Initiales, Type, MàJ
+  if (vals.length < 2) return null;
+  const byDay = {}; let type = 'frigo'; let has = false;
+  vals.slice(1).forEach(r => {
+    const k = dateKeyBK(r[0]);
+    if (!k || k.slice(0, 7) !== mois) return;
+    has = true;
+    byDay[parseInt(k.slice(8, 10), 10)] = { temp: r[1], initials: r[2] };
+    if (String(r[3]).toLowerCase() === 'congelateur') type = 'congelateur';
+  });
+  if (!has) return null;
+  const temps = TEMP_RANGES[type];
+  const days = []; for (let d = 1; d <= 31; d++) days.push(d);
+  const grid = [['T°C \\ Jour'].concat(days)];
+  temps.forEach(t => {
+    grid.push([t + '°C'].concat(days.map(d => (byDay[d] && Number(byDay[d].temp) === t) ? '●' : '')));
+  });
+  grid.push(['Initiales'].concat(days.map(d => (byDay[d] && byDay[d].initials) ? byDay[d].initials : '')));
+  return grid;
+}
+
+// Exporte le classeur en PDF (paysage) et XLSX dans le dossier (remplace les anciens).
+function exportSpreadsheetFile(ssId, folder, baseName) {
+  const opt  = { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true };
+  const base = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?';
+  const pdfUrl  = base + 'format=pdf&size=A4&portrait=false&fitw=true&gridlines=true&sheetnames=true';
+  const xlsxUrl = base + 'format=xlsx';
+  ['.pdf', '.xlsx'].forEach(ext => {
+    const it = folder.getFilesByName(baseName + ext);
+    while (it.hasNext()) it.next().setTrashed(true);
+  });
+  folder.createFile(UrlFetchApp.fetch(pdfUrl,  opt).getBlob().setName(baseName + '.pdf'));
+  folder.createFile(UrlFetchApp.fetch(xlsxUrl, opt).getBlob().setName(baseName + '.xlsx'));
+}
+
+function dateKeyBK(v) {
+  if (v === '' || v == null) return '';
+  const d = (v instanceof Date) ? v : new Date(v);
+  return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  PILOTAGE / VÉRIFICATION À DISTANCE (facultatif : nécessite un déploiement Web)
 // ══════════════════════════════════════════════════════════════════════════════
 function doGet(e) {
@@ -120,6 +218,7 @@ function doGet(e) {
   if (action === 'backup')       payload = { ok: true, url: backupNow() };
   else if (action === 'archive') payload = { ok: true, files: dailyArchive() };
   else if (action === 'exportmonth') payload = { ok: true, url: exportMonth(e.parameter.ym) };
+  else if (action === 'exporttemp')  payload = { ok: true, url: exportTempMonth(e.parameter.ym) };
   else if (action === 'install') { installTriggers(); payload = { ok: true, installed: true }; }
   else if (action === 'status')  payload = { ok: true, status: statusInfo() };
   else payload = { ok: true };
@@ -129,14 +228,16 @@ function doGet(e) {
 }
 
 function statusInfo() {
-  const bf = getOrCreateFolder(BACKUP_FOLDER), af = getOrCreateFolder(ARCHIVE_FOLDER);
+  const bf = getOrCreateFolder(BACKUP_FOLDER), af = getOrCreateFolder(ARCHIVE_FOLDER), tf = getOrCreateFolder(TEMP_EXPORT_FOLDER);
   const count = f => { let n = 0; const it = f.getFiles(); while (it.hasNext()) { it.next(); n++; } return n; };
   return {
     email: BACKUP_EMAIL || '(non renseigné)',
     sauvegardes: count(bf),
     archivesMensuelles: count(af),
+    relevesTemperature: count(tf),
     dossierSauvegardes: bf.getUrl(),
-    dossierArchives: af.getUrl()
+    dossierArchives: af.getUrl(),
+    dossierTemperature: tf.getUrl()
   };
 }
 
@@ -157,7 +258,7 @@ function moveToFolder(file, folder) {
 }
 function shareFolders() {
   if (!BACKUP_EMAIL) return;
-  [BACKUP_FOLDER, ARCHIVE_FOLDER].forEach(n => {
+  [BACKUP_FOLDER, ARCHIVE_FOLDER, TEMP_EXPORT_FOLDER].forEach(n => {
     try { getOrCreateFolder(n).addViewer(BACKUP_EMAIL); } catch (err) { /* déjà partagé */ }
   });
 }
