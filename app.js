@@ -147,31 +147,31 @@ let editingOriginal = null;  // la transaction d'origine (déjà payée)
 function defaultArticles() {
   return [
     // Pizzas petites
-    { id: uid(), name: 'Margherita (P)',        category: 'Pizzas petites', price: 7,    emoji: '🍕' },
-    { id: uid(), name: 'Regina (P)',             category: 'Pizzas petites', price: 9,    emoji: '🍕' },
-    { id: uid(), name: '4 Formaggi (P)',         category: 'Pizzas petites', price: 11,   emoji: '🧀' },
-    { id: uid(), name: 'Piccante (P)',           category: 'Pizzas petites', price: 9,    emoji: '🌶️' },
-    { id: uid(), name: 'Caprino (P)',            category: 'Pizzas petites', price: 11,   emoji: '🐐' },
-    { id: uid(), name: 'Montarana (P)',          category: 'Pizzas petites', price: 11,   emoji: '🏔️' },
-    { id: uid(), name: 'Italiana (P)',           category: 'Pizzas petites', price: 9,    emoji: '🍅' },
-    { id: uid(), name: 'Cesare (P)',             category: 'Pizzas petites', price: 11,   emoji: '🍗' },
-    { id: uid(), name: 'Sottobosco (P)',         category: 'Pizzas petites', price: 9,    emoji: '🍄' },
-    { id: uid(), name: 'Sole in vista (P)',      category: 'Pizzas petites', price: 9,    emoji: '☀️' },
-    { id: uid(), name: 'Carbonara (P)',          category: 'Pizzas petites', price: 9,    emoji: '🥓' },
-    { id: uid(), name: 'Pollo e Gorgonzola (P)', category: 'Pizzas petites', price: 11,   emoji: '🍗' },
+    { id: uid(), name: 'Margherita (P)',        category: 'Petite', price: 7,    emoji: '🍕' },
+    { id: uid(), name: 'Regina (P)',             category: 'Petite', price: 9,    emoji: '🍕' },
+    { id: uid(), name: '4 Formaggi (P)',         category: 'Petite', price: 11,   emoji: '🧀' },
+    { id: uid(), name: 'Piccante (P)',           category: 'Petite', price: 9,    emoji: '🌶️' },
+    { id: uid(), name: 'Caprino (P)',            category: 'Petite', price: 11,   emoji: '🐐' },
+    { id: uid(), name: 'Montarana (P)',          category: 'Petite', price: 11,   emoji: '🏔️' },
+    { id: uid(), name: 'Italiana (P)',           category: 'Petite', price: 9,    emoji: '🍅' },
+    { id: uid(), name: 'Cesare (P)',             category: 'Petite', price: 11,   emoji: '🍗' },
+    { id: uid(), name: 'Sottobosco (P)',         category: 'Petite', price: 9,    emoji: '🍄' },
+    { id: uid(), name: 'Sole in vista (P)',      category: 'Petite', price: 9,    emoji: '☀️' },
+    { id: uid(), name: 'Carbonara (P)',          category: 'Petite', price: 9,    emoji: '🥓' },
+    { id: uid(), name: 'Pollo e Gorgonzola (P)', category: 'Petite', price: 11,   emoji: '🍗' },
     // Pizzas grandes
-    { id: uid(), name: 'Margherita (G)',        category: 'Pizzas grandes', price: 10,   emoji: '🍕' },
-    { id: uid(), name: 'Regina (G)',             category: 'Pizzas grandes', price: 12,   emoji: '🍕' },
-    { id: uid(), name: '4 Formaggi (G)',         category: 'Pizzas grandes', price: 14,   emoji: '🧀' },
-    { id: uid(), name: 'Piccante (G)',           category: 'Pizzas grandes', price: 12,   emoji: '🌶️' },
-    { id: uid(), name: 'Caprino (G)',            category: 'Pizzas grandes', price: 14,   emoji: '🐐' },
-    { id: uid(), name: 'Montarana (G)',          category: 'Pizzas grandes', price: 14,   emoji: '🏔️' },
-    { id: uid(), name: 'Italiana (G)',           category: 'Pizzas grandes', price: 12,   emoji: '🍅' },
-    { id: uid(), name: 'Cesare (G)',             category: 'Pizzas grandes', price: 14,   emoji: '🍗' },
-    { id: uid(), name: 'Sottobosco (G)',         category: 'Pizzas grandes', price: 12,   emoji: '🍄' },
-    { id: uid(), name: 'Sole in vista (G)',      category: 'Pizzas grandes', price: 12,   emoji: '☀️' },
-    { id: uid(), name: 'Carbonara (G)',          category: 'Pizzas grandes', price: 12,   emoji: '🥓' },
-    { id: uid(), name: 'Pollo e Gorgonzola (G)', category: 'Pizzas grandes', price: 14,   emoji: '🍗' },
+    { id: uid(), name: 'Margherita (G)',        category: 'Grande', price: 10,   emoji: '🍕' },
+    { id: uid(), name: 'Regina (G)',             category: 'Grande', price: 12,   emoji: '🍕' },
+    { id: uid(), name: '4 Formaggi (G)',         category: 'Grande', price: 14,   emoji: '🧀' },
+    { id: uid(), name: 'Piccante (G)',           category: 'Grande', price: 12,   emoji: '🌶️' },
+    { id: uid(), name: 'Caprino (G)',            category: 'Grande', price: 14,   emoji: '🐐' },
+    { id: uid(), name: 'Montarana (G)',          category: 'Grande', price: 14,   emoji: '🏔️' },
+    { id: uid(), name: 'Italiana (G)',           category: 'Grande', price: 12,   emoji: '🍅' },
+    { id: uid(), name: 'Cesare (G)',             category: 'Grande', price: 14,   emoji: '🍗' },
+    { id: uid(), name: 'Sottobosco (G)',         category: 'Grande', price: 12,   emoji: '🍄' },
+    { id: uid(), name: 'Sole in vista (G)',      category: 'Grande', price: 12,   emoji: '☀️' },
+    { id: uid(), name: 'Carbonara (G)',          category: 'Grande', price: 12,   emoji: '🥓' },
+    { id: uid(), name: 'Pollo e Gorgonzola (G)', category: 'Grande', price: 14,   emoji: '🍗' },
     // Suppléments
     { id: uid(), name: 'Jambon / Salsiccia / Guanciale / Poulet', category: 'Supp', price: 3,    emoji: '➕' },
     { id: uid(), name: 'Fromages',              category: 'Supp',    price: 2.5,  emoji: '🧀' },
@@ -529,35 +529,41 @@ function categories() {
   return ['Tous', ...orderedCategories()];
 }
 
-// Catégorie « Suppléments » fusionnée dans « Supp » (nom canonique unique).
-const CAT_CANON = { 'Suppléments': 'Supp' };
+// Renommages de catégories canoniques (ancien nom -> nouveau nom).
+const CAT_CANON = {
+  'Suppléments': 'Supp',
+  'Pizzas grandes': 'Grande',
+  'Pizzas petites': 'Petite'
+};
 function canonCat(c) { return CAT_CANON[c] || c; }
 
-// Libellés courts + couleur par catégorie (les valeurs réelles servent au filtrage).
+// Libellés + couleur par catégorie (les valeurs réelles servent au filtrage).
 const CAT_LABELS = {
-  'Tous': 'Tous', 'Pizzas grandes': 'Grandes', 'Pizzas petites': 'Petites',
-  'Supp': 'Supp', 'Desserts': 'Dessert'
+  'Tous': 'Tous', 'Desserts': 'Dessert'
 };
 const CAT_COLORS = {
-  'Tous': '#89310B', 'Pizzas grandes': '#2f7d8a', 'Pizzas petites': '#76894F',
+  'Tous': '#89310B', 'Grande': '#2f7d8a', 'Petite': '#76894F',
   'Supp': '#c9822b', 'Desserts': '#8e5572'
 };
 const CAT_PALETTE = ['#89310B', '#2f7d8a', '#76894F', '#c9822b', '#8e5572', '#4a6fa5', '#a5504a'];
 // Ordre d'affichage souhaité (les inconnues suivent, dans leur ordre existant).
-const CAT_ORDER = ['Pizzas grandes', 'Pizzas petites', 'Supp', 'Desserts'];
+const CAT_ORDER = ['Grande', 'Petite', 'Supp', 'Desserts'];
 
-// Migration ponctuelle : fusionne l'ancienne catégorie « Suppléments » dans « Supp »
-// (et supprime un éventuel doublon d'article de même nom déjà présent en « Supp »).
-function mergeSuppCategory() {
+// Migration ponctuelle : applique les renommages CAT_CANON aux articles locaux
+// (et supprime un éventuel doublon d'article de même nom déjà présent dans la cible).
+function migrateCategories() {
   let changed = false;
-  const seen = new Set(articles.filter(a => a.category === 'Supp').map(a => a.name));
   const kept = [];
+  const seenByCat = {}; // catégorie cible -> noms déjà présents (pour dédoublonner)
+  articles.forEach(a => { if (!CAT_CANON[a.category]) (seenByCat[a.category] = seenByCat[a.category] || new Set()).add(a.name); });
   articles.forEach(a => {
-    if (a.category === 'Suppléments') {
+    const target = CAT_CANON[a.category];
+    if (target) {
       changed = true;
-      if (seen.has(a.name)) return;   // doublon exact : on retire l'ancien
-      seen.add(a.name);
-      a.category = 'Supp';
+      const set = seenByCat[target] = seenByCat[target] || new Set();
+      if (set.has(a.name)) return;   // doublon exact : on retire l'ancien
+      set.add(a.name);
+      a.category = target;
     }
     kept.push(a);
   });
@@ -2599,7 +2605,7 @@ window.addTransaction = function(tx) {
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-const _suppMerged = mergeSuppCategory();   // fusionne « Suppléments » -> « Supp » si besoin
+const _suppMerged = migrateCategories();   // renomme Suppléments->Supp, Pizzas grandes->Grande, etc.
 renderCategories();
 renderArticles();
 renderTicketClient();
