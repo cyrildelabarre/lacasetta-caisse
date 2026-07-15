@@ -977,6 +977,42 @@ function renderTempGrid() {
 }
 
 document.getElementById('menu-temp').addEventListener('click', () => { closeMenu(); openTempModal(); });
+
+// ── Synchronisation manuelle (bouton du menu) ─────────────────────────────────
+// Pousse tous les relevés de température locaux vers Google Sheets.
+function pushAllTemperatures() {
+  const all = LS.get('pos_temp_records', {});
+  Object.keys(all).forEach(key => {
+    const sep = key.lastIndexOf('|');
+    if (sep < 0) return;
+    const encId = key.slice(0, sep), month = key.slice(sep + 1);
+    const enc = encById(encId);
+    if (!enc) return;
+    const rec = all[key] || {};
+    const temps = rec.temps || {}, iniByDay = rec.initialsByDay || {};
+    const dayset = new Set([...Object.keys(temps), ...Object.keys(iniByDay)]);
+    const days = [...dayset].sort((a, b) => a - b).map(d => ({
+      date: month + '-' + String(d).padStart(2, '0'),
+      temp: (d in temps) ? temps[d] : '',
+      initials: iniByDay[d] || ''
+    }));
+    if (!days.length) return;
+    fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify({ tempSync: { enclosure: enc.name, type: enc.type, month, days } }) }).catch(() => {});
+  });
+}
+
+// Échange complet à la demande : envoie ET récupère ventes, catalogue, relevés.
+function syncAll() {
+  showToast('🔄 Synchronisation en cours…');
+  syncToSheets();                         // envoie les ventes en attente
+  if (cataloguePushPending) pushCatalogue();
+  pullCatalogue();                        // récupère le catalogue partagé
+  pushAllTemperatures();                  // envoie tous les relevés locaux
+  pullTemperatures();                     // récupère les relevés
+  loadFromSheets();                       // rafraîchit l'historique des ventes (reporting)
+  setTimeout(() => showToast('✅ Données synchronisées.'), 3000);
+}
+document.getElementById('menu-sync').addEventListener('click', () => { closeMenu(); goToCaisse(); syncAll(); });
 document.getElementById('temp-month').addEventListener('change', e => { tempMonth = e.target.value || tempMonth; loadTempInto(); });
 document.getElementById('temp-month-prev').addEventListener('click', () => shiftTempMonth(-1));
 document.getElementById('temp-month-next').addEventListener('click', () => shiftTempMonth(1));
