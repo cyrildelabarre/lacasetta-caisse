@@ -1043,6 +1043,8 @@ document.getElementById('btn-temp-save').addEventListener('click', () => {
   tempRec.initials = ini;
   const day = new Date().getDate();  // jour du mois (aujourd'hui)
   tempRec.initialsByDay[day] = ini;
+  // Complète « CB » sur chaque jour relevé (température saisie) sans initiales.
+  Object.keys(tempRec.temps).forEach(d => { if (!tempRec.initialsByDay[d]) tempRec.initialsByDay[d] = 'CB'; });
   persistTemp();
   pushTemperatures();   // envoi immédiat vers Google Sheets
   renderTempGrid();

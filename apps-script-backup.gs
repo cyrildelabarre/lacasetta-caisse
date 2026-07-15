@@ -54,7 +54,29 @@ function installTriggers() {
 function dailyJob() {
   backupNow();
   dailyArchive();
+  fillMissingInitials();  // complète « CB » sur les jours relevés sans initiales
   dailyTempExport();
+}
+
+// Pour chaque enceinte : si un jour a une température mais pas d'initiales, met « CB ».
+const DEFAULT_INITIALS = 'CB';
+function fillMissingInitials() {
+  const master = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheets = master.getSheets().filter(s => s.getName().indexOf('🌡️ ') === 0);
+  let filled = 0;
+  sheets.forEach(sh => {
+    const lr = sh.getLastRow();
+    if (lr < 2) return;
+    const rng  = sh.getRange(2, 2, lr - 1, 2); // colonnes B (Température) et C (Initiales)
+    const vals = rng.getValues();
+    let changed = false;
+    vals.forEach(r => {
+      const temp = r[0], ini = r[1];
+      if (temp !== '' && temp != null && (ini === '' || ini == null)) { r[1] = DEFAULT_INITIALS; changed = true; filled++; }
+    });
+    if (changed) rng.setValues(vals);
+  });
+  return filled;
 }
 
 // Régénère l'export des relevés de température du mois en cours et précédent.
@@ -219,6 +241,7 @@ function doGet(e) {
   else if (action === 'archive') payload = { ok: true, files: dailyArchive() };
   else if (action === 'exportmonth') payload = { ok: true, url: exportMonth(e.parameter.ym) };
   else if (action === 'exporttemp')  payload = { ok: true, url: exportTempMonth(e.parameter.ym) };
+  else if (action === 'fillinitials') payload = { ok: true, filled: fillMissingInitials() };
   else if (action === 'install') { installTriggers(); payload = { ok: true, installed: true }; }
   else if (action === 'status')  payload = { ok: true, status: statusInfo() };
   else payload = { ok: true };
