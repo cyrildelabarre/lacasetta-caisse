@@ -543,11 +543,11 @@ const CAT_LABELS = {
 };
 const CAT_COLORS = {
   'Tous': '#89310B', 'Grande': '#2f7d8a', 'Petite': '#76894F',
-  'Supp': '#c9822b', 'Desserts': '#8e5572'
+  'Boissons': '#4a6fa5', 'Supp': '#c9822b', 'Desserts': '#8e5572'
 };
 const CAT_PALETTE = ['#89310B', '#2f7d8a', '#76894F', '#c9822b', '#8e5572', '#4a6fa5', '#a5504a'];
 // Ordre d'affichage souhaité (les inconnues suivent, dans leur ordre existant).
-const CAT_ORDER = ['Grande', 'Petite', 'Supp', 'Desserts'];
+const CAT_ORDER = ['Grande', 'Petite', 'Boissons', 'Supp', 'Desserts'];
 
 // Migration ponctuelle : applique les renommages CAT_CANON aux articles locaux
 // (et supprime un éventuel doublon d'article de même nom déjà présent dans la cible).
