@@ -366,6 +366,26 @@
     </div>
   </div>
 
+  <!-- Modal planning mensuel individuel (chaque employé voit ses créneaux) -->
+  <div class="modal-overlay" id="modal-emp-timesheet">
+    <div class="modal" style="max-width:560px;width:96%">
+      <div class="et-head">
+        <h3 id="et-title">🗓 Planning du mois</h3>
+        <button class="btn-secondary" id="et-close">Fermer</button>
+      </div>
+      <div class="et-toolbar">
+        <div class="et-nav">
+          <button class="btn-secondary" id="et-prev" title="Mois précédent">◀</button>
+          <span id="et-month" class="et-month"></span>
+          <button class="btn-secondary" id="et-next" title="Mois suivant">▶</button>
+        </div>
+        <div class="et-summary" id="et-summary"></div>
+      </div>
+      <p class="et-hint">Touchez un jour pour ajouter ou modifier un créneau.</p>
+      <div id="et-grid"></div>
+    </div>
+  </div>
+
   <!-- Modal édition d'un créneau (shift) -->
   <div class="modal-overlay" id="modal-shift">
     <div class="modal modal-sm">

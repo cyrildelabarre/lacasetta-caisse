@@ -2219,11 +2219,14 @@ function renderEmployeeList() {
         <span class="employee-name">${escapeHtml(e.name)}</span>
         ${isCur ? '<span class="employee-badge">en poste</span>' : ''}
       </button>
+      <button class="employee-sheet" data-id="${e.id}" title="Voir son planning du mois">🗓</button>
       <button class="employee-star${isDef ? ' on' : ''}" data-id="${e.id}" title="Employé par défaut au démarrage">${isDef ? '⭐' : '☆'}</button>
       <button class="employee-edit" data-id="${e.id}" title="Renommer">✏️</button>
       <button class="employee-del" data-id="${e.id}" title="Retirer">🗑</button>`;
     box.appendChild(row);
   });
+
+  box.querySelectorAll('.employee-sheet').forEach(b => b.addEventListener('click', () => openEmpTimesheet(b.dataset.id)));
 
   box.querySelectorAll('.employee-pick').forEach(b => b.addEventListener('click', () => {
     setCurrentEmployee(b.dataset.id);
@@ -2488,7 +2491,7 @@ document.getElementById('btn-shift-delete').addEventListener('click', () => {
   if (!shiftCtx) return;
   setShift(shiftCtx.date, shiftCtx.empId, null);
   closeShiftModal();
-  renderHoraires();
+  refreshTimesheets();
 });
 document.getElementById('btn-shift-save').addEventListener('click', () => {
   if (!shiftCtx) return;
@@ -2498,11 +2501,85 @@ document.getElementById('btn-shift-save').addEventListener('click', () => {
   if (shiftMinutes({ start, end }) <= 0) { showToast('La fin doit être après le début.'); return; }
   setShift(shiftCtx.date, shiftCtx.empId, { start, end });
   closeShiftModal();
-  renderHoraires();
+  refreshTimesheets();
 });
 document.getElementById('modal-shift').addEventListener('click', e => {
   if (e.target.id === 'modal-shift') closeShiftModal();
 });
+
+// ── Planning mensuel individuel (chaque employé voit ses propres créneaux) ──
+let empSheetId    = null;
+let empSheetMonth = todayISO().slice(0, 7);   // AAAA-MM affiché
+const empSheetModal = document.getElementById('modal-emp-timesheet');
+function empSheetOpen() { return empSheetModal.classList.contains('open'); }
+// Rafraîchit les deux vues du planning après édition d'un créneau.
+function refreshTimesheets() {
+  if (horairesReady) renderHoraires();
+  if (empSheetOpen()) renderEmpTimesheet();
+}
+
+function openEmpTimesheet(empId) {
+  const e = employeeById(empId);
+  if (!e) return;
+  empSheetId    = empId;
+  empSheetMonth = todayISO().slice(0, 7);   // ouvre toujours sur le mois courant
+  renderEmpTimesheet();
+  empSheetModal.classList.add('open');
+}
+function closeEmpTimesheet() { empSheetModal.classList.remove('open'); empSheetId = null; }
+function shiftEmpSheetMonth(n) {
+  const d = new Date(empSheetMonth + '-01T12:00:00');
+  d.setMonth(d.getMonth() + n);
+  empSheetMonth = d.toISOString().slice(0, 7);
+  renderEmpTimesheet();
+}
+
+function renderEmpTimesheet() {
+  const e = employeeById(empSheetId);
+  if (!e) return;
+  const [y, m] = empSheetMonth.split('-').map(Number);   // m : 1–12
+  const monthIdx = m - 1;
+  document.getElementById('et-title').textContent = `🗓 ${e.name}`;
+  document.getElementById('et-month').textContent =
+    new Date(y, monthIdx, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  const startMon = mondayOf(empSheetMonth + '-01');
+  const today    = todayISO();
+  let monthMin = 0, daysWorked = 0;
+
+  let html = '<div class="et-cal">'
+    + ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(d => `<div class="et-dow">${d}</div>`).join('');
+  for (let i = 0; i < 42; i++) {
+    const iso = isoAddDays(startMon, i);
+    const cd  = new Date(iso + 'T12:00:00');
+    const inMonth = cd.getMonth() === monthIdx;
+    const s   = shiftFor(iso, empSheetId);
+    const min = shiftMinutes(s);
+    if (inMonth && min) { monthMin += min; daysWorked++; }
+    const cls = ['et-day'];
+    if (!inMonth) cls.push('et-out');
+    if (iso === today) cls.push('et-today');
+    if (s) cls.push('et-on');
+    html += `<div class="${cls.join(' ')}" data-date="${iso}">
+      <span class="et-num">${cd.getDate()}</span>
+      ${s ? `<span class="et-shift">${s.start}–${s.end}</span><span class="et-shift-dur">${fmtDur(min)}</span>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+
+  document.getElementById('et-summary').innerHTML =
+    `<strong>${fmtDur(monthMin)}</strong> ce mois · <strong>${daysWorked}</strong> jour${daysWorked > 1 ? 's' : ''} travaillé${daysWorked > 1 ? 's' : ''}`;
+
+  const grid = document.getElementById('et-grid');
+  grid.innerHTML = html;
+  grid.querySelectorAll('.et-day').forEach(c =>
+    c.addEventListener('click', () => openShiftModal(c.dataset.date, empSheetId)));
+}
+
+document.getElementById('et-close').addEventListener('click', closeEmpTimesheet);
+document.getElementById('et-prev').addEventListener('click', () => shiftEmpSheetMonth(-1));
+document.getElementById('et-next').addEventListener('click', () => shiftEmpSheetMonth(1));
+empSheetModal.addEventListener('click', e => { if (e.target === empSheetModal) closeEmpTimesheet(); });
 
 // Entrées du menu ☰
 document.getElementById('menu-employees').addEventListener('click', () => { closeMenu(); openEmployeeModal(); });
