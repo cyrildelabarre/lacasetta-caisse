@@ -50,12 +50,13 @@
       <button class="tab-btn" data-tab="memo">Mémo du jour</button>
       <button class="tab-btn" data-tab="dashboard">📊 Tableau</button>
       <button class="tab-btn" data-tab="reporting">Reporting</button>
+      <button class="tab-btn" data-tab="clients">👥 Clients</button>
     </nav>
     <div class="header-info">
       <span id="date-display"></span>
       <button class="btn-location" id="btn-location" title="Changer l'emplacement">📍 <span id="location-label">—</span></button>
-      <button class="btn-lock" id="btn-menu" title="Menu des fonctions">☰</button>
-      <button class="btn-lock" id="btn-lock" title="Verrouiller">🔒</button>
+      <button class="btn-lock" id="btn-menu" title="Menu des fonctions">☰ <span class="btn-label">Menu</span></button>
+      <button class="btn-lock" id="btn-lock" title="Verrouiller l'écran (code PIN pour rouvrir)">🔒 <span class="btn-label">Verrouiller</span></button>
     </div>
   </header>
 
@@ -80,6 +81,7 @@
             <button class="btn-ghost" id="btn-clear-ticket">Vider</button>
           </div>
         </div>
+        <button class="ticket-client-btn" id="btn-ticket-client" title="Associer un client au ticket (fidélité, historique)">👤 Associer un client</button>
         <div id="edit-tx-banner" class="edit-tx-banner" style="display:none"></div>
         <div class="ticket-lines" id="ticket-lines">
           <p class="empty-msg">Aucun article</p>
@@ -252,6 +254,63 @@
     </div>
   </section>
 
+  <!-- ───── CLIENTS (CRM) ───── -->
+  <section id="tab-clients" class="tab-content">
+    <div class="clients-layout">
+      <div class="clients-controls">
+        <input type="search" id="client-search" placeholder="🔍 Rechercher un client (nom, téléphone…)">
+        <button class="btn-primary" id="btn-new-client">➕ Nouveau client</button>
+        <button class="btn-secondary" id="btn-export-clients">⬇ Exporter CSV</button>
+      </div>
+      <div class="memo-summary" id="clients-kpis"></div>
+      <div class="clients-list" id="clients-list"></div>
+    </div>
+  </section>
+
+  <!-- Modal fiche client (création / édition) -->
+  <div class="modal-overlay" id="modal-client">
+    <div class="modal">
+      <h3 id="modal-client-title">Nouveau client</h3>
+      <label>Nom *</label>
+      <input type="text" id="client-name" placeholder="Marie Dupont">
+      <label>Téléphone</label>
+      <input type="tel" id="client-phone" placeholder="06 12 34 56 78">
+      <label>Notes</label>
+      <input type="text" id="client-notes" placeholder="Allergies, préférences, habitudes…">
+      <div class="modal-actions">
+        <button class="btn-danger" id="btn-client-delete" style="display:none;margin-right:auto">🗑 Supprimer</button>
+        <button class="btn-ghost" id="btn-client-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-client-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal détail client (fidélité + historique d'achats) -->
+  <div class="modal-overlay" id="modal-client-detail">
+    <div class="modal" style="max-width:480px">
+      <h3 id="client-detail-name">👤 Client</h3>
+      <div id="client-detail-body" class="client-detail-body"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="btn-client-detail-edit">✏️ Modifier</button>
+        <button class="btn-primary" id="btn-client-detail-close">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal choix du client pour le ticket en cours -->
+  <div class="modal-overlay" id="modal-client-pick">
+    <div class="modal" style="max-width:400px">
+      <h3>👤 Associer un client au ticket</h3>
+      <input type="search" id="client-pick-search" placeholder="🔍 Nom ou téléphone…" style="width:100%;box-sizing:border-box;margin:.4rem 0 .6rem">
+      <div id="client-pick-list" class="client-pick-list"></div>
+      <div style="display:flex;gap:.6rem;margin-top:1rem">
+        <button class="btn-secondary" id="btn-client-pick-new" style="flex:1">➕ Nouveau</button>
+        <button class="btn-ghost" id="btn-client-pick-remove" style="flex:1;display:none">✕ Retirer</button>
+        <button class="btn-ghost" id="btn-client-pick-close" style="flex:1">Fermer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal emplacement -->
   <div class="modal-overlay" id="modal-location">
     <div class="modal" style="max-width:340px">
@@ -272,12 +331,16 @@
     <div class="modal" style="max-width:340px">
       <h3>☰ Menu</h3>
       <div class="menu-list">
+        <p class="menu-section">🍕 Catalogue</p>
+        <button class="menu-item" id="menu-add-article">➕ Ajouter un article<small>Créer un nouvel article dans le catalogue</small></button>
         <button class="menu-item" id="menu-edit-article">✏️ Modifier un article<small>Changer le nom, le prix ou supprimer</small></button>
         <button class="menu-item" id="menu-reorder">🔀 Déplacer les articles<small>Réorganiser l'ordre dans le catalogue</small></button>
         <button class="menu-item" id="menu-categories">🗂 Gérer les catégories<small>Renommer et changer l'ordre des onglets</small></button>
-        <button class="menu-item" id="menu-pin">🔑 Changer le code PIN<small>Modifier le code de déverrouillage</small></button>
-        <button class="menu-item" id="menu-add-article">➕ Ajouter un article<small>Créer un nouvel article dans le catalogue</small></button>
         <button class="menu-item" id="menu-inactive">🚫 Articles inactifs<small>Voir et réactiver les articles masqués</small></button>
+        <p class="menu-section">👥 Clients</p>
+        <button class="menu-item" id="menu-clients">👥 Fiches clients<small>Fidélité, coordonnées et historique d'achats</small></button>
+        <p class="menu-section">⚙️ Réglages &amp; sécurité</p>
+        <button class="menu-item" id="menu-pin">🔑 Changer le code PIN<small>Modifier le code de déverrouillage</small></button>
         <button class="menu-item menu-item-test" id="menu-testmode">🧪 Mode formation<small>Ventes de test isolées, non comptées</small></button>
       </div>
       <button class="btn-secondary" id="btn-menu-close" style="width:100%;margin-top:1rem">Fermer</button>
@@ -314,7 +377,8 @@
       <label>Nom</label>
       <input type="text" id="art-name" placeholder="Margherita">
       <label>Catégorie</label>
-      <input type="text" id="art-category" placeholder="Pizzas">
+      <select id="art-category"></select>
+      <input type="text" id="art-category-new" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:.4rem">
       <label>Prix (€)</label>
       <input type="number" id="art-price" min="0" step="0.01" placeholder="12.00">
       <label>Emoji</label>

@@ -319,6 +319,7 @@ function cancelEdit() {
   editingOriginal = null;
   ticket = [];
   exitOfferMode();
+  setTicketClient(null);
   document.getElementById('cash-given').value = '';
   renderEditBanner();
   renderTicket();
@@ -366,6 +367,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'memo') { renderMemo(); autoLoadSheets(); }
     if (btn.dataset.tab === 'reporting') { renderReporting(); autoLoadSheets(); }
     if (btn.dataset.tab === 'dashboard') { renderDashboard(); autoLoadSheets(); }
+    if (btn.dataset.tab === 'clients') { renderClients(); autoLoadSheets(); }
   });
 });
 
@@ -775,6 +777,10 @@ document.getElementById('menu-categories').addEventListener('click', () => {
 document.getElementById('menu-pin').addEventListener('click', () => {
   closeMenu(); openPinModal();
 });
+document.getElementById('menu-clients').addEventListener('click', () => {
+  closeMenu();
+  document.querySelector('.tab-btn[data-tab="clients"]').click();
+});
 document.getElementById('menu-testmode').addEventListener('click', () => {
   closeMenu();
   setTestMode(!isTestMode());
@@ -1048,6 +1054,7 @@ function exitOfferMode() {
 document.getElementById('btn-clear-ticket').addEventListener('click', () => {
   ticket = [];
   exitOfferMode();
+  setTicketClient(null);
   renderTicket();
 });
 
@@ -1103,12 +1110,16 @@ document.getElementById('btn-validate').addEventListener('click', () => {
       method:      payMethod,
       cancelled:   false,
       complementOf: editingTxId,
+      clientId:    ticketClient ? ticketClient.id : undefined,
+      clientName:  ticketClient ? ticketClient.name : undefined,
     };
     addTransaction(tx);
+    applyLoyaltyAfterSale(lines);
     editingTxId = null;
     editingOriginal = null;
     ticket = [];
     exitOfferMode();
+    setTicketClient(null);
     document.getElementById('cash-given').value = '';
     renderEditBanner();
     renderTicket();
@@ -1124,24 +1135,360 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     total,
     method:    payMethod,
     cancelled: false,
+    clientId:   ticketClient ? ticketClient.id : undefined,
+    clientName: ticketClient ? ticketClient.name : undefined,
   };
   addTransaction(tx);
+  applyLoyaltyAfterSale(lines);
   ticket = [];
   exitOfferMode();
+  setTicketClient(null);
   document.getElementById('cash-given').value = '';
   renderTicket();
   showToast(`✔ Paiement de ${fmtEur(total)} enregistré (${payMethod}).`);
+});
+
+// ══════════════════ CLIENTS (CRM) ═════════════════════════════════════════════
+// Fiches clients stockées en local (localStorage), comme les ventes.
+// Fidélité : toutes les LOYALTY_THRESHOLD pizzas achetées → 1 pizza offerte,
+// à appliquer avec le bouton « 🍕 Fidélité » du ticket.
+
+const LOYALTY_THRESHOLD = 10;
+let clients = LS.get('pos_clients', []);
+function saveClients() { LS.set('pos_clients', clients); }
+function clientById(id) { return clients.find(c => c.id === id); }
+
+function pizzasOf(c)         { return c.pizzaCount || 0; }
+function rewardsAvailable(c) { return Math.max(Math.floor(pizzasOf(c) / LOYALTY_THRESHOLD) - (c.rewardsUsed || 0), 0); }
+function loyaltyProgress(c)  { return pizzasOf(c) % LOYALTY_THRESHOLD; }
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// Ventes associées à un client (locales + Sheets fusionnées, les plus récentes d'abord)
+function clientTxs(id) {
+  return reportSource()
+    .filter(t => !t.cancelled && t.clientId === id)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// Stats { visites, total, dernière visite } par client, en un seul passage.
+function clientStatsMap() {
+  const map = {};
+  reportSource().forEach(t => {
+    if (t.cancelled || !t.clientId) return;
+    const b = map[t.clientId] = map[t.clientId] || { n: 0, total: 0, last: '' };
+    b.n++; b.total += t.total;
+    if (t.date > b.last) b.last = t.date;
+  });
+  return map;
+}
+
+function clientMatches(c, q) {
+  if (!q) return true;
+  return (c.name || '').toLowerCase().includes(q)
+    || (c.phone || '').replace(/\s/g, '').includes(q.replace(/\s/g, ''));
+}
+
+// ── Client associé au ticket en cours ─────────────────────────────────────────
+let ticketClient = null; // { id, name }
+
+function setTicketClient(c) {
+  ticketClient = c ? { id: c.id, name: c.name } : null;
+  renderTicketClient();
+}
+
+function renderTicketClient() {
+  const btn = document.getElementById('btn-ticket-client');
+  if (!ticketClient) {
+    btn.className = 'ticket-client-btn';
+    btn.innerHTML = '👤 Associer un client';
+    return;
+  }
+  const c = clientById(ticketClient.id);
+  const avail = c ? rewardsAvailable(c) : 0;
+  btn.className = 'ticket-client-btn selected' + (avail > 0 ? ' reward' : '');
+  btn.innerHTML = avail > 0
+    ? `👤 <b>${escapeHtml(ticketClient.name)}</b> · 🎁 ${avail} pizza${avail > 1 ? 's' : ''} offerte${avail > 1 ? 's' : ''} dispo`
+    : `👤 <b>${escapeHtml(ticketClient.name)}</b>${c ? ` · ${loyaltyProgress(c)}/${LOYALTY_THRESHOLD} 🍕` : ''}`;
+}
+
+// Met à jour la fidélité du client après une vente validée.
+// Les pizzas offertes consomment d'abord les récompenses disponibles,
+// puis les pizzas payées font avancer le compteur.
+function applyLoyaltyAfterSale(lines) {
+  if (!ticketClient) return;
+  const c = clientById(ticketClient.id);
+  if (!c) return;
+  const isPizza = l => /pizza/i.test(l.category || '');
+  const paidPizzas = lines.filter(l => isPizza(l) && l.price > 0).reduce((s, l) => s + l.qty, 0);
+  const freePizzas = lines.filter(l => isPizza(l) && l.price === 0).reduce((s, l) => s + l.qty, 0);
+  if (freePizzas > 0) {
+    const used = Math.min(freePizzas, rewardsAvailable(c));
+    if (used > 0) c.rewardsUsed = (c.rewardsUsed || 0) + used;
+  }
+  const before = rewardsAvailable(c);
+  c.pizzaCount = pizzasOf(c) + paidPizzas;
+  saveClients();
+  if (rewardsAvailable(c) > before) {
+    showToast(`🎉 ${c.name} vient de gagner une pizza offerte (fidélité) !`);
+  }
+}
+
+// ── Sélecteur de client depuis le ticket ──────────────────────────────────────
+function openClientPicker() {
+  document.getElementById('client-pick-search').value = '';
+  document.getElementById('btn-client-pick-remove').style.display = ticketClient ? 'block' : 'none';
+  renderClientPickList('');
+  document.getElementById('modal-client-pick').classList.add('open');
+}
+function closeClientPicker() { document.getElementById('modal-client-pick').classList.remove('open'); }
+
+function renderClientPickList(q) {
+  const el = document.getElementById('client-pick-list');
+  const list = clients
+    .filter(c => clientMatches(c, q.toLowerCase().trim()))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr'));
+  if (!list.length) {
+    el.innerHTML = `<p class="empty-msg">${clients.length
+      ? 'Aucun client trouvé.'
+      : 'Aucun client — créez le premier avec « ➕ Nouveau ».'}</p>`;
+    return;
+  }
+  el.innerHTML = '';
+  list.forEach(c => {
+    const avail = rewardsAvailable(c);
+    const row = document.createElement('button');
+    row.className = 'client-pick-row';
+    row.innerHTML = `
+      <span class="cp-name"><b>${escapeHtml(c.name)}</b>${c.phone ? `<small>${escapeHtml(c.phone)}</small>` : ''}</span>
+      <span class="cp-loy${avail > 0 ? ' reward' : ''}">${avail > 0
+        ? `🎁 ${avail} offerte${avail > 1 ? 's' : ''}`
+        : `${loyaltyProgress(c)}/${LOYALTY_THRESHOLD} 🍕`}</span>`;
+    row.addEventListener('click', () => {
+      setTicketClient(c);
+      closeClientPicker();
+      if (avail > 0) showToast(`🎁 ${c.name} a ${avail} pizza${avail > 1 ? 's' : ''} offerte${avail > 1 ? 's' : ''} — touchez « 🍕 Fidélité » pour l'appliquer.`);
+    });
+    el.appendChild(row);
+  });
+}
+
+document.getElementById('btn-ticket-client').addEventListener('click', openClientPicker);
+document.getElementById('client-pick-search').addEventListener('input', e => renderClientPickList(e.target.value));
+document.getElementById('btn-client-pick-close').addEventListener('click', closeClientPicker);
+document.getElementById('btn-client-pick-remove').addEventListener('click', () => { setTicketClient(null); closeClientPicker(); });
+document.getElementById('btn-client-pick-new').addEventListener('click', () => { closeClientPicker(); openClientModal(null, { attach: true }); });
+document.getElementById('modal-client-pick').addEventListener('click', e => {
+  if (e.target.id === 'modal-client-pick') closeClientPicker();
+});
+
+// ── Fiche client : création / édition ─────────────────────────────────────────
+let editingClientId = null;
+let clientModalAttach = false; // après enregistrement, associer au ticket en cours
+
+function openClientModal(client = null, opts = {}) {
+  editingClientId = client ? client.id : null;
+  clientModalAttach = !!opts.attach;
+  document.getElementById('modal-client-title').textContent = client ? 'Modifier le client' : 'Nouveau client';
+  document.getElementById('client-name').value  = client?.name  ?? '';
+  document.getElementById('client-phone').value = client?.phone ?? '';
+  document.getElementById('client-notes').value = client?.notes ?? '';
+  document.getElementById('btn-client-delete').style.display = client ? 'inline-flex' : 'none';
+  document.getElementById('modal-client').classList.add('open');
+}
+function closeClientModal() { document.getElementById('modal-client').classList.remove('open'); }
+
+document.getElementById('btn-client-cancel').addEventListener('click', closeClientModal);
+document.getElementById('modal-client').addEventListener('click', e => {
+  if (e.target.id === 'modal-client') closeClientModal();
+});
+
+document.getElementById('btn-client-save').addEventListener('click', () => {
+  const name  = document.getElementById('client-name').value.trim();
+  const phone = document.getElementById('client-phone').value.trim();
+  const notes = document.getElementById('client-notes').value.trim();
+  if (!name) { showToast('Le nom du client est obligatoire.'); return; }
+  const wasEditing = !!editingClientId;
+  let c;
+  if (wasEditing) {
+    c = clientById(editingClientId);
+    if (c) { c.name = name; c.phone = phone; c.notes = notes; }
+  } else {
+    c = { id: uid(), name, phone, notes, createdAt: new Date().toISOString(), pizzaCount: 0, rewardsUsed: 0 };
+    clients.push(c);
+  }
+  saveClients();
+  closeClientModal();
+  if (clientModalAttach && c) setTicketClient(c);
+  else if (ticketClient && c && ticketClient.id === c.id) setTicketClient(c); // rafraîchit le nom affiché
+  clientModalAttach = false;
+  renderClients();
+  showToast(wasEditing ? 'Client modifié.' : `Client « ${name} » créé.`);
+});
+
+document.getElementById('btn-client-delete').addEventListener('click', () => {
+  if (!editingClientId) return;
+  const c = clientById(editingClientId);
+  if (!confirm(`Supprimer la fiche de ${c ? c.name : 'ce client'} ? Les ventes passées sont conservées, mais sa fidélité sera perdue.`)) return;
+  clients = clients.filter(x => x.id !== editingClientId);
+  if (ticketClient && ticketClient.id === editingClientId) setTicketClient(null);
+  saveClients();
+  closeClientModal();
+  document.getElementById('modal-client-detail').classList.remove('open');
+  renderClients();
+  showToast('Client supprimé.');
+});
+
+// ── Détail client : fidélité + historique ─────────────────────────────────────
+let detailClientId = null;
+
+function openClientDetail(id) {
+  const c = clientById(id);
+  if (!c) return;
+  detailClientId = id;
+  const txs   = clientTxs(id);
+  const total = txs.reduce((s, t) => s + t.total, 0);
+  const avail = rewardsAvailable(c);
+  const nbPizzas = pizzasOf(c);
+  document.getElementById('client-detail-name').textContent = `👤 ${c.name}`;
+  document.getElementById('client-detail-body').innerHTML = `
+    ${avail > 0 ? `<div class="client-reward-banner">🎁 ${avail} pizza${avail > 1 ? 's' : ''} offerte${avail > 1 ? 's' : ''} disponible${avail > 1 ? 's' : ''} — associez ce client au ticket puis touchez « 🍕 Fidélité ».</div>` : ''}
+    <div class="client-detail-info">
+      ${c.phone ? `📞 <b>${escapeHtml(c.phone)}</b><br>` : ''}
+      ${c.notes ? `📝 ${escapeHtml(c.notes)}<br>` : ''}
+      🍕 Fidélité : <b>${loyaltyProgress(c)}/${LOYALTY_THRESHOLD}</b> vers la prochaine offerte (${nbPizzas} pizza${nbPizzas > 1 ? 's' : ''} achetée${nbPizzas > 1 ? 's' : ''} au total)<br>
+      🧾 <b>${txs.length}</b> visite${txs.length > 1 ? 's' : ''} · 💰 <b>${fmtEur(total)}</b> · Dernière visite : <b>${txs[0] ? fmtDate(txs[0].date.slice(0, 10)) : '—'}</b>
+    </div>
+    <div>
+      <p class="label" style="margin-bottom:.3rem">Historique des achats</p>
+      <div class="client-history">
+        ${txs.slice(0, 20).map(t => `
+          <div class="client-history-row">
+            <div class="chr-top"><span>${fmtDate(t.date.slice(0, 10))} · ${fmtTime(t.date)}</span><span>${fmtEur(t.total)}</span></div>
+            <div class="chr-items">${t.lines.map(l => `${l.name} ×${l.qty}`).join(', ')}</div>
+          </div>`).join('') || '<p class="empty-msg">Aucun achat enregistré pour le moment</p>'}
+      </div>
+    </div>`;
+  document.getElementById('modal-client-detail').classList.add('open');
+}
+
+document.getElementById('btn-client-detail-close').addEventListener('click', () => {
+  document.getElementById('modal-client-detail').classList.remove('open');
+});
+document.getElementById('modal-client-detail').addEventListener('click', e => {
+  if (e.target.id === 'modal-client-detail') document.getElementById('modal-client-detail').classList.remove('open');
+});
+document.getElementById('btn-client-detail-edit').addEventListener('click', () => {
+  document.getElementById('modal-client-detail').classList.remove('open');
+  const c = clientById(detailClientId);
+  if (c) openClientModal(c);
+});
+
+// ── Onglet Clients : liste, recherche, KPIs, export ───────────────────────────
+function renderClients() {
+  const q = (document.getElementById('client-search').value || '').toLowerCase().trim();
+  const stats = clientStatsMap();
+
+  const totRewards = clients.reduce((s, c) => s + rewardsAvailable(c), 0);
+  const caClients  = Object.values(stats).reduce((s, b) => s + b.total, 0);
+  document.getElementById('clients-kpis').innerHTML = `
+    <div class="summary-chip"><strong>${clients.length}</strong>client${clients.length > 1 ? 's' : ''}</div>
+    <div class="summary-chip"><strong>${totRewards}</strong>🎁 pizza${totRewards > 1 ? 's' : ''} fidélité à offrir</div>
+    <div class="summary-chip"><strong>${fmtEur(caClients)}</strong>CA clients identifiés</div>`;
+
+  const el = document.getElementById('clients-list');
+  const list = clients
+    .filter(c => clientMatches(c, q))
+    .sort((a, b) => (stats[b.id]?.last || '').localeCompare(stats[a.id]?.last || '')
+      || (a.name || '').localeCompare(b.name || '', 'fr'));
+  if (!list.length) {
+    el.innerHTML = `<p class="empty-msg">${clients.length
+      ? 'Aucun client ne correspond à la recherche.'
+      : 'Aucun client pour le moment — touchez « ➕ Nouveau client », ou associez un client à un ticket depuis la caisse.'}</p>`;
+    return;
+  }
+  el.innerHTML = '';
+  list.forEach(c => {
+    const st    = stats[c.id] || { n: 0, total: 0, last: '' };
+    const avail = rewardsAvailable(c);
+    const prog  = loyaltyProgress(c);
+    const row = document.createElement('div');
+    row.className = 'client-row';
+    row.innerHTML = `
+      <div class="client-id"><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.phone || '')}${c.phone && c.notes ? ' · ' : ''}${escapeHtml(c.notes || '')}</small></div>
+      <div class="client-loyalty${avail > 0 ? ' reward' : ''}">
+        ${avail > 0 ? `🎁 ${avail} pizza${avail > 1 ? 's' : ''} offerte${avail > 1 ? 's' : ''} !` : `🍕 ${prog}/${LOYALTY_THRESHOLD} vers l'offerte`}
+        <div class="loy-track"><div class="loy-fill${avail > 0 ? ' full' : ''}" style="width:${avail > 0 ? 100 : prog / LOYALTY_THRESHOLD * 100}%"></div></div>
+      </div>
+      <div class="client-stats"><b>${st.n}</b> visite${st.n > 1 ? 's' : ''} · <b>${fmtEur(st.total)}</b><br>${st.last ? 'dern. ' + fmtDate(st.last.slice(0, 10)) : 'aucune vente'}</div>
+      <button class="client-edit-btn" title="Modifier la fiche">✏️</button>`;
+    row.addEventListener('click', e => {
+      if (e.target.closest('.client-edit-btn')) { openClientModal(c); return; }
+      openClientDetail(c.id);
+    });
+    el.appendChild(row);
+  });
+}
+
+document.getElementById('client-search').addEventListener('input', renderClients);
+document.getElementById('btn-new-client').addEventListener('click', () => openClientModal());
+
+document.getElementById('btn-export-clients').addEventListener('click', () => {
+  if (!clients.length) { showToast('Aucun client à exporter.'); return; }
+  const stats = clientStatsMap();
+  const rows = [['Nom', 'Téléphone', 'Notes', 'Pizzas achetées', 'Fidélités utilisées', 'Fidélités disponibles', 'Visites', 'Total dépensé (€)', 'Dernière visite']];
+  clients.forEach(c => {
+    const st = stats[c.id] || { n: 0, total: 0, last: '' };
+    rows.push([c.name, c.phone || '', c.notes || '', pizzasOf(c), c.rewardsUsed || 0,
+      rewardsAvailable(c), st.n, st.total.toFixed(2), st.last ? st.last.slice(0, 10) : '']);
+  });
+  downloadCSV(`clients_${todayISO()}.csv`, rows);
 });
 
 // ══════════════════ MODAL ARTICLE ═════════════════════════════════════════════
 
 let editingArticleId = null;
 
+const NEW_CAT = '__new__';
+function fillCategorySelect(selected) {
+  const sel = document.getElementById('art-category');
+  sel.innerHTML = '';
+  const cats = orderedCategories();                 // catégories réelles existantes
+  if (selected && !cats.includes(selected)) cats.push(selected); // sécurité (catégorie orpheline)
+  cats.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  });
+  const oNew = document.createElement('option');
+  oNew.value = NEW_CAT; oNew.textContent = '➕ Nouvelle catégorie…';
+  sel.appendChild(oNew);
+  sel.value = selected && cats.includes(selected) ? selected : (cats[0] || NEW_CAT);
+  syncNewCatField();
+}
+function syncNewCatField() {
+  const sel = document.getElementById('art-category');
+  const inp = document.getElementById('art-category-new');
+  const isNew = sel.value === NEW_CAT;
+  inp.style.display = isNew ? 'block' : 'none';
+  if (!isNew) inp.value = '';
+}
+document.getElementById('art-category').addEventListener('change', () => {
+  syncNewCatField();
+  if (document.getElementById('art-category').value === NEW_CAT) document.getElementById('art-category-new').focus();
+});
+
 function openArticleModal(art = null) {
   editingArticleId = art ? art.id : null;
   document.getElementById('modal-article-title').textContent = art ? 'Modifier l\'article' : 'Nouvel article';
-  document.getElementById('art-name').value     = art?.name     ?? '';
-  document.getElementById('art-category').value = art?.category ?? '';
+  document.getElementById('art-name').value  = art?.name  ?? '';
+  // Catégorie : liste des existantes + « Nouvelle catégorie ». Par défaut, la catégorie
+  // active de l'onglet pour un nouvel article (sauf « Tous »).
+  const defaultCat = art ? art.category : (activeCategory !== 'Tous' ? activeCategory : null);
+  fillCategorySelect(defaultCat);
   document.getElementById('art-price').value    = art?.price    ?? '';
   document.getElementById('art-emoji').value    = art?.emoji    ?? '🍕';
   document.getElementById('art-active').checked = art ? (art.active !== false) : true;
@@ -1175,7 +1522,8 @@ document.getElementById('btn-modal-delete').addEventListener('click', () => {
 
 document.getElementById('btn-modal-save').addEventListener('click', () => {
   const name     = document.getElementById('art-name').value.trim();
-  const category = document.getElementById('art-category').value.trim();
+  const selCat   = document.getElementById('art-category').value;
+  const category = selCat === NEW_CAT ? document.getElementById('art-category-new').value.trim() : selCat;
   const price    = parseFloat(document.getElementById('art-price').value);
   const emoji    = document.getElementById('art-emoji').value.trim() || '🍕';
   const active   = document.getElementById('art-active').checked;
@@ -1272,7 +1620,9 @@ function renderMemo() {
   }
   txs.slice().reverse().forEach((tx, i) => {
     const cls = tx.cancelled ? 'cancelled' : '';
-    const linesStr = (tx.complementOf ? '🔁 <em>complément</em> · ' : '') + tx.lines.map(l => `${emojiFor(l)}${l.name} ×${l.qty}`).join(', ');
+    const linesStr = (tx.clientName ? `👤 <strong>${tx.clientName}</strong> · ` : '')
+      + (tx.complementOf ? '🔁 <em>complément</em> · ' : '')
+      + tx.lines.map(l => `${emojiFor(l)}${l.name} ×${l.qty}`).join(', ');
     const badge = tx.cancelled
       ? '<span class="badge-pay badge-annule">Annulé</span>'
       : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte'}[tx.method] ?? tx.method}</span>`;
@@ -1326,12 +1676,13 @@ document.getElementById('btn-export-memo').addEventListener('click', () => {
   const date = memoDateInput.value || todayISO();
   const txs  = txsForDate(date);
   if (!txs.length) { showToast('Aucune donnée à exporter.'); return; }
-  const rows = [['#', 'Date', 'Heure', 'Articles', 'Paiement', 'Montant', 'Statut']];
+  const rows = [['#', 'Date', 'Heure', 'Client', 'Articles', 'Paiement', 'Montant', 'Statut']];
   txs.forEach((tx, i) => {
     rows.push([
       i + 1,
       date,
       fmtTime(tx.date),
+      tx.clientName || '',
       tx.lines.map(l => `${l.name} x${l.qty}`).join(' | '),
       tx.method,
       tx.total.toFixed(2),
@@ -2222,6 +2573,7 @@ window.addTransaction = function(tx) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderCategories();
 renderArticles();
+renderTicketClient();
 renderTestBanner();   // restaure la bannière si le mode formation était actif
 updateTestMenuLabel();
 renderMemo();

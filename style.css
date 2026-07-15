@@ -137,16 +137,20 @@ header {
 .header-info { font-size: .85rem; opacity: .85; white-space: nowrap; display: flex; align-items: center; gap: .7rem; }
 
 .btn-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
   background: rgba(255,255,255,.15);
   border: none;
   border-radius: 6px;
   color: var(--white);
   font-size: 1rem;
-  padding: .3rem .5rem;
+  padding: .3rem .6rem;
   cursor: pointer;
   transition: background .15s;
 }
 .btn-lock:hover { background: rgba(255,255,255,.3); }
+.btn-lock .btn-label { font-size: .78rem; font-weight: 600; }
 
 .btn-location {
   background: rgba(255,255,255,.15);
@@ -984,14 +988,17 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 .modal-sm { min-width: 280px; }
 .modal h3 { font-size: 1.05rem; margin-bottom: .3rem; }
 .modal label { font-size: .82rem; color: var(--mid); font-weight: 600; }
-.modal input {
+.modal input,
+.modal select {
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: .45rem .7rem;
   font-size: .9rem;
   width: 100%;
+  background: var(--white);
 }
-.modal input:focus { outline: 2px solid var(--terracotta); border-color: transparent; }
+.modal input:focus,
+.modal select:focus { outline: 2px solid var(--terracotta); border-color: transparent; }
 .modal-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .4rem; }
 
 /* ── Toast ── */
@@ -1035,4 +1042,161 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
   .ticket-header-btns { gap: .3rem; }
   .btn-discount { padding: .35rem .6rem; font-size: .78rem; }
   .btn-ghost    { padding: .3rem .6rem; font-size: .8rem; }
+  .ticket-client-btn { padding: .35rem .6rem; font-size: .78rem; }
 }
+
+/* ── Sections du menu ☰ ── */
+.menu-section {
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--mid);
+  margin: .55rem 0 -.15rem;
+  padding-left: .15rem;
+}
+.menu-section:first-child { margin-top: 0; }
+
+/* ════════════════ CLIENTS (CRM) ════════════════ */
+
+/* Bouton client du ticket */
+.ticket-client-btn {
+  display: block;
+  width: calc(100% - 1.6rem);
+  margin: .5rem .8rem 0;
+  background: var(--white);
+  border: 1.5px dashed var(--border);
+  border-radius: 8px;
+  padding: .45rem .7rem;
+  font-size: .82rem;
+  color: var(--mid);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+  flex-shrink: 0;
+}
+.ticket-client-btn:hover { border-color: var(--terracotta); color: var(--dark); }
+.ticket-client-btn.selected {
+  border-style: solid;
+  border-color: var(--terracotta);
+  color: var(--dark);
+  background: #fff4ec;
+}
+.ticket-client-btn.reward {
+  border-color: var(--olive);
+  background: #f2f6ec;
+}
+
+/* Onglet Clients */
+.clients-layout {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.5rem;
+  gap: .8rem;
+  height: 100%;
+  overflow: hidden;
+}
+.clients-controls { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; flex-shrink: 0; }
+.clients-controls input[type=search] {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .5rem .8rem;
+  font-size: .9rem;
+  background: var(--white);
+}
+.clients-controls input[type=search]:focus { outline: 2px solid var(--terracotta); border-color: transparent; }
+
+.clients-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  align-content: start;
+}
+.client-row {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .6rem .9rem;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.client-row:hover { border-color: var(--terracotta); box-shadow: var(--shadow); }
+.client-id { flex: 1 1 200px; min-width: 0; }
+.client-id strong { display: block; font-size: .95rem; }
+.client-id small { color: var(--mid); font-size: .76rem; }
+.client-loyalty { flex: 0 0 150px; font-size: .74rem; color: var(--mid); }
+.client-loyalty.reward { color: var(--olive); font-weight: 700; }
+.loy-track { height: 8px; background: #f0e6df; border-radius: 999px; overflow: hidden; margin-top: 3px; }
+.loy-fill { height: 100%; background: var(--terracotta); border-radius: 999px; }
+.loy-fill.full { background: var(--olive); }
+.client-stats { flex: 0 0 auto; text-align: right; font-size: .78rem; color: var(--mid); white-space: nowrap; }
+.client-stats b { color: var(--dark); }
+.client-edit-btn {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .4rem .55rem;
+  font-size: .95rem;
+  cursor: pointer;
+}
+.client-edit-btn:hover { border-color: var(--terracotta); background: var(--terracotta-bg); }
+
+/* Liste du sélecteur de client (ticket) */
+.client-pick-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+.client-pick-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: var(--terracotta-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .55rem .8rem;
+  cursor: pointer;
+  text-align: left;
+  font-size: .88rem;
+  transition: border-color .15s, background .15s;
+}
+.client-pick-row:hover { border-color: var(--terracotta); background: #fff4ec; }
+.client-pick-row .cp-name { flex: 1; min-width: 0; }
+.client-pick-row .cp-name small { display: block; color: var(--mid); font-size: .74rem; }
+.client-pick-row .cp-loy { font-size: .76rem; color: var(--mid); white-space: nowrap; }
+.client-pick-row .cp-loy.reward { color: var(--olive); font-weight: 700; }
+
+/* Détail client */
+.client-detail-body { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: .7rem; }
+.client-detail-info { font-size: .86rem; color: var(--mid); }
+.client-detail-info b { color: var(--dark); }
+.client-reward-banner {
+  background: #f2f6ec;
+  border: 1.5px solid var(--olive);
+  border-radius: 8px;
+  padding: .5rem .7rem;
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--olive);
+}
+.client-history { display: flex; flex-direction: column; gap: .35rem; }
+.client-history-row {
+  background: var(--terracotta-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .4rem .6rem;
+  font-size: .8rem;
+}
+.client-history-row .chr-top { display: flex; justify-content: space-between; font-weight: 600; }
+.client-history-row .chr-items { color: var(--mid); font-size: .75rem; margin-top: 2px; }
