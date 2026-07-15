@@ -124,7 +124,7 @@ const LS = {
 // En mode formation, les ventes vont dans un espace LOCAL séparé et sont
 // synchronisées vers un déploiement Apps Script de TEST (Sheet de test) — jamais
 // vers la prod. Le catalogue (articles/catégories) reste partagé entre les modes.
-const PROD_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbz0f1sTzIoUrtkrgFx6OtaTb_cDjDuZvhGsSf5wAukDOQQirrhiCeF_pJ5wcWSmmNq5/exec';
+const PROD_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzxGbmC6fJ2khbh6hYhwGvP-LRCeo3SLX8MCkYYTlDMEdQQ-CY6RRQudqoIaPJ8vYOZ/exec';
 const TEST_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzMZ1t__JojJAREbp7uP6uYyFiVurIIAAT95TwIIUgshJX_sWMBRHjh6vgqkG7B3ig0OA/exec';
 
 function isTestMode() { return LS.get('pos_testmode', false) === true; }
