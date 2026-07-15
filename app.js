@@ -795,6 +795,102 @@ document.getElementById('btn-inactive-close').addEventListener('click', () => {
 document.getElementById('modal-inactive').addEventListener('click', e => {
   if (e.target.id === 'modal-inactive') document.getElementById('modal-inactive').classList.remove('open');
 });
+
+// ── Relevés de température (HACCP) : frigo & congélateur ───────────────────────
+const TEMP_ENCLOSURES = {
+  frigo:       { label: '🧊 Frigo (positives)',       temps: [8, 7, 6, 5, 4, 3, 2, 1, 0] },
+  congelateur: { label: '❄️ Congélateur (négatives)', temps: [-14, -15, -16, -17, -18, -19, -20, -21, -22] }
+};
+let tempEnc   = 'frigo';
+let tempMonth = todayISO().slice(0, 7); // AAAA-MM
+
+function tempKey(enc, month) { return enc + '|' + month; }
+function getTempRecord(enc, month) {
+  const all = LS.get('pos_temp_records', {});
+  return all[tempKey(enc, month)] || { name: '', temps: {}, initials: '', corrective: '' };
+}
+function saveTempRecord(enc, month, rec) {
+  const all = LS.get('pos_temp_records', {});
+  all[tempKey(enc, month)] = rec;
+  LS.set('pos_temp_records', all);
+}
+let tempRec = null; // enregistrement en cours d'édition
+
+function openTempModal(enc) {
+  tempEnc = enc || 'frigo';
+  tempMonth = todayISO().slice(0, 7);
+  loadTempInto();
+  document.getElementById('temp-month').value = tempMonth;
+  document.getElementById('modal-temp').classList.add('open');
+}
+function loadTempInto() {
+  tempRec = getTempRecord(tempEnc, tempMonth);
+  document.querySelectorAll('.temp-enc-tab').forEach(b => b.classList.toggle('active', b.dataset.enc === tempEnc));
+  document.getElementById('temp-title').textContent = '🌡️ ' + TEMP_ENCLOSURES[tempEnc].label;
+  document.getElementById('temp-name').value       = tempRec.name || '';
+  document.getElementById('temp-initials').value   = tempRec.initials || '';
+  document.getElementById('temp-corrective').value = tempRec.corrective || '';
+  renderTempGrid();
+}
+function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); }
+
+function renderTempGrid() {
+  const table = document.getElementById('temp-grid');
+  const temps = TEMP_ENCLOSURES[tempEnc].temps;
+  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  let html = '<thead><tr><th class="temp-corner">T°C \\ Jour</th>' +
+    days.map(d => `<th>${d}</th>`).join('') + '</tr></thead><tbody>';
+  temps.forEach(t => {
+    html += `<tr><th class="temp-rowlabel">${t}°C</th>` +
+      days.map(d => {
+        const on = tempRec.temps[d] === t;
+        return `<td class="temp-cell${on ? ' on' : ''}" data-day="${d}" data-temp="${t}">${on ? '●' : ''}</td>`;
+      }).join('') + '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+  table.querySelectorAll('.temp-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const d = +cell.dataset.day, t = +cell.dataset.temp;
+      if (tempRec.temps[d] === t) delete tempRec.temps[d]; // re-toucher = effacer
+      else tempRec.temps[d] = t;                            // sinon = déplacer la pastille du jour
+      persistTemp();
+      renderTempGrid();
+    });
+  });
+}
+
+document.getElementById('menu-temp').addEventListener('click', () => { closeMenu(); openTempModal('frigo'); });
+document.querySelectorAll('.temp-enc-tab').forEach(b => {
+  b.addEventListener('click', () => { tempEnc = b.dataset.enc; loadTempInto(); });
+});
+document.getElementById('temp-month').addEventListener('change', e => { tempMonth = e.target.value || tempMonth; loadTempInto(); });
+document.getElementById('temp-month-prev').addEventListener('click', () => shiftTempMonth(-1));
+document.getElementById('temp-month-next').addEventListener('click', () => shiftTempMonth(1));
+function shiftTempMonth(n) {
+  const [y, m] = tempMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  tempMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  document.getElementById('temp-month').value = tempMonth;
+  loadTempInto();
+}
+['temp-name', 'temp-initials', 'temp-corrective'].forEach(id => {
+  document.getElementById(id).addEventListener('input', e => {
+    const map = { 'temp-name': 'name', 'temp-initials': 'initials', 'temp-corrective': 'corrective' };
+    tempRec[map[id]] = e.target.value;
+    persistTemp();
+  });
+});
+document.getElementById('btn-temp-save').addEventListener('click', () => { persistTemp(); showToast('Relevé enregistré.'); });
+document.getElementById('btn-temp-close').addEventListener('click', () => document.getElementById('modal-temp').classList.remove('open'));
+document.getElementById('btn-temp-print').addEventListener('click', () => {
+  const monthLabel = new Date(tempMonth + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  document.getElementById('modal-temp').dataset.printtitle =
+    TEMP_ENCLOSURES[tempEnc].label + ' — ' + (tempRec.name || '') + ' — ' + monthLabel;
+  document.body.classList.add('printing-temp');
+  window.print();
+  setTimeout(() => document.body.classList.remove('printing-temp'), 500);
+});
 document.getElementById('menu-edit-article').addEventListener('click', () => {
   closeMenu(); goToCaisse();
   if (editMode) toggleEditMode();

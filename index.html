@@ -337,6 +337,7 @@
         <button class="menu-item" id="menu-reorder">🔀 Déplacer les articles<small>Réorganiser l'ordre dans le catalogue</small></button>
         <button class="menu-item" id="menu-categories">🗂 Gérer les catégories<small>Renommer et changer l'ordre des onglets</small></button>
         <button class="menu-item" id="menu-inactive">🚫 Articles inactifs<small>Voir et réactiver les articles masqués</small></button>
+        <button class="menu-item" id="menu-temp">🌡️ Relevés de température<small>Frigo &amp; congélateur (HACCP)</small></button>
         <p class="menu-section">👥 Clients</p>
         <button class="menu-item" id="menu-clients">👥 Fiches clients<small>Fidélité, coordonnées et historique d'achats</small></button>
         <p class="menu-section">⚙️ Réglages &amp; sécurité</p>
@@ -354,6 +355,44 @@
       <p style="font-size:.85rem;color:var(--mid);margin:.2rem 0 .8rem">Ces articles sont masqués à la vente. Touchez « Réactiver » pour les réafficher.</p>
       <div id="inactive-list" class="inactive-list"></div>
       <button class="btn-secondary" id="btn-inactive-close" style="width:100%;margin-top:1rem">Fermer</button>
+    </div>
+  </div>
+
+  <!-- Modal relevés de température (HACCP) -->
+  <div class="modal-overlay" id="modal-temp">
+    <div class="modal modal-temp">
+      <div class="temp-head">
+        <h3 id="temp-title">🌡️ Relevés de température</h3>
+        <button class="btn-secondary" id="btn-temp-close">Fermer</button>
+      </div>
+      <div class="temp-toolbar">
+        <div class="temp-enc-tabs">
+          <button class="temp-enc-tab" data-enc="frigo">🧊 Frigo</button>
+          <button class="temp-enc-tab" data-enc="congelateur">❄️ Congélateur</button>
+        </div>
+        <div class="temp-month-nav">
+          <button class="btn-secondary" id="temp-month-prev" title="Mois précédent">◀</button>
+          <input type="month" id="temp-month">
+          <button class="btn-secondary" id="temp-month-next" title="Mois suivant">▶</button>
+        </div>
+      </div>
+      <label class="temp-field">Nom de l'enceinte froide
+        <input type="text" id="temp-name" placeholder="ex. Frigo cuisine">
+      </label>
+      <p class="temp-hint">Touchez une case pour marquer la température relevée chaque jour.</p>
+      <div class="temp-grid-wrap"><table class="temp-grid" id="temp-grid"></table></div>
+      <div class="temp-fields2">
+        <label class="temp-field">Initiales du signataire
+          <input type="text" id="temp-initials" placeholder="ex. CD">
+        </label>
+        <label class="temp-field">Action corrective
+          <textarea id="temp-corrective" rows="2" placeholder="En cas d'écart : action menée…"></textarea>
+        </label>
+      </div>
+      <div class="temp-actions">
+        <button class="btn-primary" id="btn-temp-save">💾 Enregistré ✓</button>
+        <button class="btn-secondary" id="btn-temp-print">🖨️ Exporter / Imprimer (PDF)</button>
+      </div>
     </div>
   </div>
 

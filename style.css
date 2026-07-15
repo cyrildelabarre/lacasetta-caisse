@@ -289,6 +289,61 @@ header {
   padding: .1rem .35rem; border-radius: 6px;
 }
 
+/* Relevés de température (HACCP) */
+.modal.modal-temp { max-width: 96vw; width: 96vw; }
+.temp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.temp-head h3 { margin: 0; }
+.temp-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; margin: .4rem 0; }
+.temp-enc-tabs { display: flex; gap: .4rem; }
+.temp-enc-tab {
+  border: 1px solid var(--border); background: var(--white); color: var(--dark);
+  border-radius: 10px; padding: .5rem .9rem; font-weight: 600; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.temp-enc-tab.active { background: var(--terracotta); color: #fff; border-color: var(--terracotta); }
+.temp-month-nav { display: flex; align-items: center; gap: .4rem; }
+.temp-month-nav input { padding: .4rem .6rem; border: 1px solid var(--border); border-radius: 8px; }
+.temp-month-nav button { padding: .4rem .7rem; }
+.temp-field { display: block; font-size: .82rem; color: var(--mid); font-weight: 600; margin: .3rem 0; }
+.temp-field input, .temp-field textarea {
+  display: block; width: 100%; margin-top: .2rem;
+  border: 1px solid var(--border); border-radius: 7px; padding: .45rem .7rem; font-size: .9rem;
+}
+.temp-hint { font-size: .78rem; color: var(--mid); font-style: italic; margin: .2rem 0; }
+.temp-fields2 { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .5rem; }
+.temp-fields2 .temp-field { flex: 1; min-width: 200px; }
+
+.temp-grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; -webkit-overflow-scrolling: touch; }
+.temp-grid { border-collapse: collapse; font-size: .72rem; width: 100%; }
+.temp-grid th, .temp-grid td { border: 1px solid var(--border); text-align: center; }
+.temp-grid thead th { background: var(--terracotta-bg); padding: .25rem 0; min-width: 26px; font-weight: 700; }
+.temp-grid .temp-corner { text-align: left; padding: .25rem .4rem; white-space: nowrap; position: sticky; left: 0; z-index: 2; background: var(--terracotta-bg); }
+.temp-grid .temp-rowlabel { position: sticky; left: 0; z-index: 1; background: var(--terracotta-bg); font-weight: 700; padding: 0 .4rem; white-space: nowrap; }
+.temp-cell { width: 26px; height: 30px; cursor: pointer; color: var(--terracotta); font-size: .9rem; line-height: 1; }
+.temp-cell.on { background: var(--olive-bg); color: var(--olive); font-weight: 700; }
+.temp-cell:active { background: var(--terracotta-bg); }
+.temp-actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
+.temp-actions button { flex: 1; min-width: 160px; }
+
+/* Impression : n'imprimer que la grille du relevé courant */
+@media print {
+  body.printing-temp > *:not(#modal-temp) { display: none !important; }
+  body.printing-temp #modal-temp {
+    position: static !important; display: block !important; background: #fff !important;
+    padding: 0 !important;
+  }
+  body.printing-temp #modal-temp .modal { max-width: none; width: 100%; box-shadow: none; }
+  body.printing-temp .temp-head button,
+  body.printing-temp .temp-toolbar,
+  body.printing-temp .temp-hint,
+  body.printing-temp .temp-actions { display: none !important; }
+  body.printing-temp #modal-temp::before {
+    content: attr(data-printtitle); display: block; font-weight: 700; font-size: 1.1rem; margin-bottom: .5rem;
+  }
+  .temp-grid-wrap { overflow: visible !important; }
+  .temp-grid { font-size: .6rem; }
+}
+
 /* Modal « Articles inactifs » */
 .inactive-list { display: flex; flex-direction: column; gap: .5rem; max-height: 55vh; overflow-y: auto; }
 .inactive-row {
