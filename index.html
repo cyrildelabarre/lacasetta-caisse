@@ -366,21 +366,13 @@
         <button class="btn-secondary" id="btn-temp-close">Fermer</button>
       </div>
       <div class="temp-toolbar">
-        <div class="temp-enc-tabs">
-          <button class="temp-enc-tab" data-enc="frigo_cuisine">🧊 Frigo cuisine</button>
-          <button class="temp-enc-tab" data-enc="frigo_timbre">🧊 Frigo timbre</button>
-          <button class="temp-enc-tab" data-enc="frigo_camion">🧊 Frigo camion</button>
-          <button class="temp-enc-tab" data-enc="congelateur">❄️ Congélateur</button>
-        </div>
+        <div class="temp-enc-tabs" id="temp-enc-tabs"></div>
         <div class="temp-month-nav">
           <button class="btn-secondary" id="temp-month-prev" title="Mois précédent">◀</button>
           <input type="month" id="temp-month">
           <button class="btn-secondary" id="temp-month-next" title="Mois suivant">▶</button>
         </div>
       </div>
-      <label class="temp-field">Nom de l'enceinte froide
-        <input type="text" id="temp-name" placeholder="ex. Frigo cuisine">
-      </label>
       <p class="temp-hint">Touchez une case pour marquer la température relevée chaque jour.</p>
       <div class="temp-grid-wrap"><table class="temp-grid" id="temp-grid"></table></div>
       <div class="temp-fields2">
@@ -394,6 +386,25 @@
       <div class="temp-actions">
         <button class="btn-primary" id="btn-temp-save">💾 Enregistré ✓</button>
         <button class="btn-secondary" id="btn-temp-print">🖨️ Exporter / Imprimer (PDF)</button>
+        <button class="btn-danger" id="btn-temp-delete" title="Supprimer cette enceinte">🗑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ajout d'une enceinte -->
+  <div class="modal-overlay" id="modal-temp-add">
+    <div class="modal">
+      <h3>➕ Nouvelle enceinte</h3>
+      <label>Nom de l'enceinte</label>
+      <input type="text" id="temp-add-name" placeholder="ex. Frigo réserve">
+      <label>Type</label>
+      <div class="temp-type-choice">
+        <button class="temp-type-btn active" data-type="frigo">🧊 Frigo<small>Températures positives (8→0°C)</small></button>
+        <button class="temp-type-btn" data-type="congelateur">❄️ Congélateur<small>Températures négatives (-14→-22°C)</small></button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="temp-add-cancel">Annuler</button>
+        <button class="btn-primary" id="temp-add-ok">Ajouter</button>
       </div>
     </div>
   </div>

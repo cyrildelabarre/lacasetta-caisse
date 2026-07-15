@@ -301,6 +301,21 @@ header {
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .temp-enc-tab.active { background: var(--terracotta); color: #fff; border-color: var(--terracotta); }
+.temp-enc-add {
+  border: 1px dashed var(--terracotta); background: var(--white); color: var(--terracotta);
+  border-radius: 10px; padding: .5rem .8rem; font-weight: 800; font-size: 1.1rem; cursor: pointer; line-height: 1;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.temp-enc-add:hover { background: var(--terracotta-bg); }
+#btn-temp-delete { flex: 0 0 auto; min-width: 0; padding: .55rem .8rem; }
+.temp-type-choice { display: flex; gap: .6rem; margin-top: .3rem; }
+.temp-type-btn {
+  flex: 1; text-align: left; background: var(--terracotta-bg); border: 2px solid var(--border);
+  border-radius: 10px; padding: .7rem .8rem; font-weight: 700; color: var(--dark); cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.temp-type-btn small { display: block; font-weight: 400; font-size: .72rem; color: var(--mid); margin-top: 3px; }
+.temp-type-btn.active { border-color: var(--terracotta); background: #fff4ec; }
 .temp-month-nav { display: flex; align-items: center; gap: .4rem; }
 .temp-month-nav input { padding: .4rem .6rem; border: 1px solid var(--border); border-radius: 8px; }
 .temp-month-nav button { padding: .4rem .7rem; }

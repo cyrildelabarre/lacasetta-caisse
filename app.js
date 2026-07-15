@@ -797,14 +797,25 @@ document.getElementById('modal-inactive').addEventListener('click', e => {
 });
 
 // ── Relevés de température (HACCP) : frigo & congélateur ───────────────────────
-const TEMP_POS = [8, 7, 6, 5, 4, 3, 2, 1, 0];
-const TEMP_ENCLOSURES = {
-  frigo_cuisine: { label: '🧊 Frigo cuisine',         temps: TEMP_POS },
-  frigo_timbre:  { label: '🧊 Frigo timbre',          temps: TEMP_POS },
-  frigo_camion:  { label: '🧊 Frigo camion',          temps: TEMP_POS },
-  congelateur:   { label: '❄️ Congélateur (négatives)', temps: [-14, -15, -16, -17, -18, -19, -20, -21, -22] }
+// Plages de température par type d'enceinte.
+const TEMP_RANGES = {
+  frigo:       [8, 7, 6, 5, 4, 3, 2, 1, 0],
+  congelateur: [-14, -15, -16, -17, -18, -19, -20, -21, -22]
 };
-let tempEnc   = 'frigo_cuisine';
+// Enceintes par défaut (l'utilisateur peut en ajouter/supprimer via le bouton +).
+const TEMP_DEFAULT_ENCLOSURES = [
+  { id: 'frigo_cuisine', name: 'Frigo cuisine', type: 'frigo' },
+  { id: 'frigo_timbre',  name: 'Frigo timbre',  type: 'frigo' },
+  { id: 'frigo_camion',  name: 'Frigo camion',  type: 'frigo' },
+  { id: 'congelateur',   name: 'Congélateur',   type: 'congelateur' }
+];
+function getEnclosures() { return LS.get('pos_temp_enclosures', null) || TEMP_DEFAULT_ENCLOSURES; }
+function saveEnclosures(list) { LS.set('pos_temp_enclosures', list); }
+function encById(id)  { return getEnclosures().find(e => e.id === id); }
+function encTemps(id) { const e = encById(id); return TEMP_RANGES[(e && e.type) || 'frigo']; }
+function encIcon(type){ return type === 'congelateur' ? '❄️' : '🧊'; }
+
+let tempEnc   = (getEnclosures()[0] || {}).id || 'frigo_cuisine';
 let tempMonth = todayISO().slice(0, 7); // AAAA-MM
 
 // Migration : les anciens relevés « frigo|… » deviennent « frigo_cuisine|… ».
@@ -821,7 +832,7 @@ let tempMonth = todayISO().slice(0, 7); // AAAA-MM
 function tempKey(enc, month) { return enc + '|' + month; }
 function getTempRecord(enc, month) {
   const all = LS.get('pos_temp_records', {});
-  const rec = all[tempKey(enc, month)] || { name: '', temps: {}, initials: '', corrective: '' };
+  const rec = all[tempKey(enc, month)] || { temps: {}, initials: '', corrective: '' };
   if (!rec.initialsByDay) rec.initialsByDay = {}; // initiales par jour (une case par jour)
   return rec;
 }
@@ -833,17 +844,25 @@ function saveTempRecord(enc, month, rec) {
 let tempRec = null; // enregistrement en cours d'édition
 
 function openTempModal(enc) {
-  tempEnc = enc || 'frigo_cuisine';
+  tempEnc = (enc && encById(enc)) ? enc : (getEnclosures()[0] || {}).id;
   tempMonth = todayISO().slice(0, 7);
   loadTempInto();
   document.getElementById('temp-month').value = tempMonth;
   document.getElementById('modal-temp').classList.add('open');
 }
+function renderTempTabs() {
+  const wrap = document.getElementById('temp-enc-tabs');
+  wrap.innerHTML = getEnclosures().map(e =>
+    `<button class="temp-enc-tab${e.id === tempEnc ? ' active' : ''}" data-enc="${e.id}">${encIcon(e.type)} ${escapeHtml(e.name)}</button>`
+  ).join('') + '<button class="temp-enc-add" id="temp-enc-add" title="Ajouter une enceinte">＋</button>';
+  wrap.querySelectorAll('.temp-enc-tab').forEach(b => b.addEventListener('click', () => { tempEnc = b.dataset.enc; loadTempInto(); }));
+  document.getElementById('temp-enc-add').addEventListener('click', openAddEnclosure);
+}
 function loadTempInto() {
   tempRec = getTempRecord(tempEnc, tempMonth);
-  document.querySelectorAll('.temp-enc-tab').forEach(b => b.classList.toggle('active', b.dataset.enc === tempEnc));
-  document.getElementById('temp-title').textContent = '🌡️ ' + TEMP_ENCLOSURES[tempEnc].label;
-  document.getElementById('temp-name').value       = tempRec.name || '';
+  renderTempTabs();
+  const e = encById(tempEnc);
+  document.getElementById('temp-title').textContent = '🌡️ ' + (e ? e.name : 'Relevés de température');
   document.getElementById('temp-initials').value   = tempRec.initials || 'CB'; // CB par défaut
   document.getElementById('temp-corrective').value = tempRec.corrective || '';
   renderTempGrid();
@@ -852,7 +871,7 @@ function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); }
 
 function renderTempGrid() {
   const table = document.getElementById('temp-grid');
-  const temps = TEMP_ENCLOSURES[tempEnc].temps;
+  const temps = encTemps(tempEnc);
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   let html = '<thead><tr><th class="temp-corner">T°C \\ Jour</th>' +
     days.map(d => `<th>${d}</th>`).join('') + '</tr></thead><tbody>';
@@ -890,10 +909,7 @@ function renderTempGrid() {
   });
 }
 
-document.getElementById('menu-temp').addEventListener('click', () => { closeMenu(); openTempModal('frigo_cuisine'); });
-document.querySelectorAll('.temp-enc-tab').forEach(b => {
-  b.addEventListener('click', () => { tempEnc = b.dataset.enc; loadTempInto(); });
-});
+document.getElementById('menu-temp').addEventListener('click', () => { closeMenu(); openTempModal(); });
 document.getElementById('temp-month').addEventListener('change', e => { tempMonth = e.target.value || tempMonth; loadTempInto(); });
 document.getElementById('temp-month-prev').addEventListener('click', () => shiftTempMonth(-1));
 document.getElementById('temp-month-next').addEventListener('click', () => shiftTempMonth(1));
@@ -904,12 +920,51 @@ function shiftTempMonth(n) {
   document.getElementById('temp-month').value = tempMonth;
   loadTempInto();
 }
-['temp-name', 'temp-initials', 'temp-corrective'].forEach(id => {
+['temp-initials', 'temp-corrective'].forEach(id => {
   document.getElementById(id).addEventListener('input', e => {
-    const map = { 'temp-name': 'name', 'temp-initials': 'initials', 'temp-corrective': 'corrective' };
-    tempRec[map[id]] = e.target.value;
+    tempRec[id === 'temp-initials' ? 'initials' : 'corrective'] = e.target.value;
     persistTemp();
   });
+});
+
+// ── Ajout / suppression d'une enceinte ────────────────────────────────────────
+let addEncType = 'frigo';
+function openAddEnclosure() {
+  addEncType = 'frigo';
+  document.getElementById('temp-add-name').value = '';
+  document.querySelectorAll('.temp-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === addEncType));
+  document.getElementById('modal-temp-add').classList.add('open');
+  setTimeout(() => document.getElementById('temp-add-name').focus(), 60);
+}
+document.querySelectorAll('.temp-type-btn').forEach(b => b.addEventListener('click', () => {
+  addEncType = b.dataset.type;
+  document.querySelectorAll('.temp-type-btn').forEach(x => x.classList.toggle('active', x === b));
+}));
+document.getElementById('temp-add-cancel').addEventListener('click', () => document.getElementById('modal-temp-add').classList.remove('open'));
+document.getElementById('temp-add-ok').addEventListener('click', () => {
+  const name = document.getElementById('temp-add-name').value.trim();
+  if (!name) { showToast('Donnez un nom à l\'enceinte.'); return; }
+  const list = getEnclosures().slice();
+  const id = 'enc_' + uid();
+  list.push({ id, name, type: addEncType });
+  saveEnclosures(list);
+  tempEnc = id;
+  document.getElementById('modal-temp-add').classList.remove('open');
+  loadTempInto();
+  showToast(`Enceinte « ${name} » ajoutée.`);
+});
+document.getElementById('btn-temp-delete').addEventListener('click', () => {
+  const e = encById(tempEnc);
+  if (!e) return;
+  if (getEnclosures().length <= 1) { showToast('Gardez au moins une enceinte.'); return; }
+  if (!confirm(`Supprimer l'enceinte « ${e.name} » et tous ses relevés ?`)) return;
+  saveEnclosures(getEnclosures().filter(x => x.id !== tempEnc));
+  const all = LS.get('pos_temp_records', {});
+  Object.keys(all).forEach(k => { if (k.indexOf(tempEnc + '|') === 0) delete all[k]; });
+  LS.set('pos_temp_records', all);
+  tempEnc = (getEnclosures()[0] || {}).id;
+  loadTempInto();
+  showToast('Enceinte supprimée.');
 });
 document.getElementById('btn-temp-save').addEventListener('click', () => {
   // Tamponne les initiales du champ dans la colonne du jour courant.
@@ -924,8 +979,9 @@ document.getElementById('btn-temp-save').addEventListener('click', () => {
 document.getElementById('btn-temp-close').addEventListener('click', () => document.getElementById('modal-temp').classList.remove('open'));
 document.getElementById('btn-temp-print').addEventListener('click', () => {
   const monthLabel = new Date(tempMonth + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const e = encById(tempEnc);
   document.getElementById('modal-temp').dataset.printtitle =
-    TEMP_ENCLOSURES[tempEnc].label + ' — ' + (tempRec.name || '') + ' — ' + monthLabel;
+    (e ? e.name : '') + ' — ' + monthLabel;
   document.body.classList.add('printing-temp');
   window.print();
   setTimeout(() => document.body.classList.remove('printing-temp'), 500);
