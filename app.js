@@ -142,6 +142,29 @@ let currentTx = null;
 let editingTxId = null;      // vente rouverte en cours de complément
 let editingOriginal = null;  // la transaction d'origine (déjà payée)
 
+// ── Employés ───────────────────────────────────────────────────────────────────
+// Liste d'employés ; l'un d'eux est « par défaut » (activé au démarrage du POS)
+// et un « courant » est sélectionné pour la session (celui qui encaisse).
+const DEFAULT_EMPLOYEES = [
+  { id: 'clemence-bailly', name: 'Clémence Bailly' },
+];
+let employees = LS.get('pos_employees', null) || DEFAULT_EMPLOYEES;
+if (!LS.get('pos_employees', null)) LS.set('pos_employees', employees);
+// Employé par défaut : Clémence Bailly (activée par défaut sur le POS)
+let defaultEmployeeId = LS.get('pos_employee_default', null)
+  || (employees[0] && employees[0].id) || null;
+if (defaultEmployeeId && !LS.get('pos_employee_default', null)) LS.set('pos_employee_default', defaultEmployeeId);
+// Employé courant : chaque nouvelle journée repart sur l'employé par défaut
+// (Clémence Bailly) ; en cours de journée on mémorise l'employé sélectionné.
+let currentEmployeeId = (() => {
+  const today     = todayISO();
+  const savedDate = LS.get('pos_employee_current_date', '');
+  if (savedDate === today) return LS.get('pos_employee_current', defaultEmployeeId);
+  LS.set('pos_employee_current', defaultEmployeeId);
+  LS.set('pos_employee_current_date', today);
+  return defaultEmployeeId;
+})();
+
 // ── Default catalogue (v2 — menu La Casetta) ─────────────────────────────────
 
 function defaultArticles() {
@@ -367,6 +390,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'memo') { renderMemo(); autoLoadSheets(); }
     if (btn.dataset.tab === 'reporting') { renderReporting(); autoLoadSheets(); }
     if (btn.dataset.tab === 'dashboard') { renderDashboard(); autoLoadSheets(); }
+    if (btn.dataset.tab === 'horaires') { renderHoraires(); }
     if (btn.dataset.tab === 'clients') { renderClients(); autoLoadSheets(); }
   });
 });
@@ -1448,6 +1472,8 @@ document.getElementById('btn-validate').addEventListener('click', () => {
       complementOf: editingTxId,
       clientId:    ticketClient ? ticketClient.id : undefined,
       clientName:  ticketClient ? ticketClient.name : undefined,
+      employeeId:  currentEmployeeId || undefined,
+      employee:    currentEmployeeName() || undefined,
     };
     addTransaction(tx);
     applyLoyaltyAfterSale(lines);
@@ -1473,6 +1499,8 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     cancelled: false,
     clientId:   ticketClient ? ticketClient.id : undefined,
     clientName: ticketClient ? ticketClient.name : undefined,
+    employeeId: currentEmployeeId || undefined,
+    employee:   currentEmployeeName() || undefined,
   };
   addTransaction(tx);
   applyLoyaltyAfterSale(lines);
@@ -1957,6 +1985,7 @@ function renderMemo() {
   txs.slice().reverse().forEach((tx, i) => {
     const cls = tx.cancelled ? 'cancelled' : '';
     const linesStr = (tx.clientName ? `👤 <strong>${tx.clientName}</strong> · ` : '')
+      + (tx.employee ? `<span class="memo-emp">🧑‍🍳 ${escapeHtml(tx.employee)}</span> · ` : '')
       + (tx.complementOf ? '🔁 <em>complément</em> · ' : '')
       + tx.lines.map(l => `${emojiFor(l)}${l.name} ×${l.qty}`).join(', ');
     const badge = tx.cancelled
@@ -2126,6 +2155,360 @@ document.getElementById('btn-location-save').addEventListener('click', () => {
 
 document.getElementById('btn-location-cancel').addEventListener('click', () => {
   document.getElementById('modal-location').classList.remove('open');
+});
+
+// ══════════════════ EMPLOYÉS ═══════════════════════════════════════════════════
+// Un employé « courant » (celui qui encaisse) est affiché dans le header et
+// enregistré sur chaque vente. Un employé « par défaut » (⭐) est réactivé à
+// chaque nouvelle journée. Liste modifiable dans la modal « Employés ».
+
+function saveEmployees() { LS.set('pos_employees', employees); }
+function employeeById(id) { return employees.find(e => e.id === id) || null; }
+function currentEmployee() { return employeeById(currentEmployeeId); }
+function currentEmployeeName() { const e = currentEmployee(); return e ? e.name : ''; }
+function empUid(name) {
+  const base = (name || 'emp').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'emp';
+  let id = base, n = 2;
+  while (employeeById(id)) id = base + '-' + (n++);
+  return id;
+}
+
+function setCurrentEmployee(id) {
+  if (!employeeById(id)) return;
+  currentEmployeeId = id;
+  LS.set('pos_employee_current', id);
+  LS.set('pos_employee_current_date', todayISO());
+  renderEmployeeBtn();
+}
+
+function setDefaultEmployee(id) {
+  if (!employeeById(id)) return;
+  defaultEmployeeId = id;
+  LS.set('pos_employee_default', id);
+}
+
+function renderEmployeeBtn() {
+  const el = document.getElementById('employee-label');
+  if (el) el.textContent = currentEmployeeName() || '—';
+}
+
+const employeeModal = document.getElementById('modal-employee');
+function openEmployeeModal() {
+  renderEmployeeList();
+  document.getElementById('employee-new-name').value = '';
+  employeeModal.classList.add('open');
+}
+function closeEmployeeModal() { employeeModal.classList.remove('open'); }
+
+function renderEmployeeList() {
+  const box = document.getElementById('employee-list');
+  box.innerHTML = '';
+  if (!employees.length) {
+    box.innerHTML = '<p style="color:var(--mid);font-size:.85rem">Aucun employé. Ajoutez-en un ci-dessous.</p>';
+    return;
+  }
+  employees.forEach(e => {
+    const isCur = e.id === currentEmployeeId;
+    const isDef = e.id === defaultEmployeeId;
+    const row = document.createElement('div');
+    row.className = 'employee-row' + (isCur ? ' active' : '');
+    row.innerHTML = `
+      <button class="employee-pick" data-id="${e.id}">
+        <span class="employee-name">${escapeHtml(e.name)}</span>
+        ${isCur ? '<span class="employee-badge">en poste</span>' : ''}
+      </button>
+      <button class="employee-star${isDef ? ' on' : ''}" data-id="${e.id}" title="Employé par défaut au démarrage">${isDef ? '⭐' : '☆'}</button>
+      <button class="employee-edit" data-id="${e.id}" title="Renommer">✏️</button>
+      <button class="employee-del" data-id="${e.id}" title="Retirer">🗑</button>`;
+    box.appendChild(row);
+  });
+
+  box.querySelectorAll('.employee-pick').forEach(b => b.addEventListener('click', () => {
+    setCurrentEmployee(b.dataset.id);
+    renderEmployeeList();
+    showToast(`👤 En poste : ${currentEmployeeName()}`);
+  }));
+  box.querySelectorAll('.employee-star').forEach(b => b.addEventListener('click', () => {
+    setDefaultEmployee(b.dataset.id);
+    renderEmployeeList();
+    showToast(`⭐ Par défaut : ${employeeById(b.dataset.id).name}`);
+  }));
+  box.querySelectorAll('.employee-edit').forEach(b => b.addEventListener('click', () => {
+    const e = employeeById(b.dataset.id);
+    if (!e) return;
+    const name = (prompt('Nom de l\'employé :', e.name) || '').trim();
+    if (!name) return;
+    e.name = name;
+    saveEmployees();
+    renderEmployeeList();
+    renderEmployeeBtn();
+    if (horairesReady) renderHoraires();
+  }));
+  box.querySelectorAll('.employee-del').forEach(b => b.addEventListener('click', () => {
+    const e = employeeById(b.dataset.id);
+    if (!e) return;
+    if (employees.length <= 1) { showToast('Gardez au moins un employé.'); return; }
+    if (!confirm(`Retirer ${e.name} de la liste ? Ses créneaux passés restent enregistrés.`)) return;
+    employees = employees.filter(x => x.id !== e.id);
+    saveEmployees();
+    // Réaffecte défaut / courant si nécessaire
+    if (defaultEmployeeId === e.id) setDefaultEmployee(employees[0].id);
+    if (currentEmployeeId === e.id) setCurrentEmployee(defaultEmployeeId);
+    renderEmployeeList();
+    renderEmployeeBtn();
+    if (horairesReady) renderHoraires();
+  }));
+}
+
+function addEmployee() {
+  const input = document.getElementById('employee-new-name');
+  const name  = input.value.trim();
+  if (!name) { showToast('Saisissez un nom.'); return; }
+  const e = { id: empUid(name), name };
+  employees.push(e);
+  saveEmployees();
+  input.value = '';
+  renderEmployeeList();
+  showToast(`➕ ${name} ajouté(e).`);
+}
+
+document.getElementById('btn-employee').addEventListener('click', openEmployeeModal);
+document.getElementById('btn-employee-close').addEventListener('click', closeEmployeeModal);
+document.getElementById('btn-employee-add').addEventListener('click', addEmployee);
+document.getElementById('employee-new-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addEmployee();
+});
+employeeModal.addEventListener('click', e => { if (e.target === employeeModal) closeEmployeeModal(); });
+
+// ══════════════════ HORAIRES (TIMESHEET) ═══════════════════════════════════════
+// Planning des créneaux à réaliser : un créneau (début–fin) par employé et par
+// jour, stocké par date ISO. Vue « semaine » (grille employés × 7 jours) et vue
+// « mois » (calendrier récapitulatif). Stockage local pos_timesheet.
+
+const DEFAULT_SHIFT = { start: '18:00', end: '21:30' }; // horaires habituels du camion
+const DOW_FULL = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+let horairesView   = LS.get('pos_horaires_view', 'week');
+let horairesAnchor = todayISO();   // une date à l'intérieur de la semaine/mois affichés
+let horairesReady  = false;        // évite les rendus avant l'init
+
+function getTimesheet() { return LS.get('pos_timesheet', {}); }
+function saveTimesheet(ts) { LS.set('pos_timesheet', ts); }
+function shiftsForDate(iso) { return getTimesheet()[iso] || []; }
+function shiftFor(iso, empId) { return shiftsForDate(iso).find(s => s.employeeId === empId) || null; }
+function setShift(iso, empId, shift) {
+  const ts = getTimesheet();
+  const arr = (ts[iso] || []).filter(s => s.employeeId !== empId);
+  if (shift) arr.push({ employeeId: empId, start: shift.start, end: shift.end });
+  if (arr.length) ts[iso] = arr; else delete ts[iso];
+  saveTimesheet(ts);
+}
+
+// ── Date helpers (locaux, sans dépendance externe) ──
+function isoAddDays(iso, n) {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function mondayOf(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  const dow = (d.getDay() + 6) % 7; // 0 = lundi
+  return isoAddDays(iso, -dow);
+}
+function weekDates(anchor) {
+  const mon = mondayOf(anchor);
+  return Array.from({ length: 7 }, (_, i) => isoAddDays(mon, i));
+}
+function parseHM(hm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm || '');
+  return m ? (+m[1]) * 60 + (+m[2]) : null;
+}
+function shiftMinutes(s) {
+  if (!s) return 0;
+  const a = parseHM(s.start), b = parseHM(s.end);
+  if (a == null || b == null) return 0;
+  return Math.max(0, b - a);
+}
+function fmtDur(min) {
+  if (!min) return '—';
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h && m) return `${h}h${String(m).padStart(2, '0')}`;
+  if (h) return `${h}h`;
+  return `${m}min`;
+}
+function empInitials(name) {
+  return (name || '').split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('').slice(0, 3) || '?';
+}
+
+function renderHoraires() {
+  horairesReady = true;
+  document.querySelectorAll('.horaires-view').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === horairesView));
+  if (horairesView === 'week') renderHorairesWeek();
+  else renderHorairesMonth();
+}
+
+function renderHorairesWeek() {
+  const dates = weekDates(horairesAnchor);
+  const mon = dates[0], sun = dates[6];
+  const fmtShort = iso => new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  document.getElementById('horaires-period').textContent = `Semaine du ${fmtShort(mon)} au ${fmtShort(sun)}`;
+  document.getElementById('horaires-hint').textContent = 'Touchez une case pour définir le créneau à réaliser (début–fin). Vide = repos.';
+
+  const today = todayISO();
+  let html = '<div class="horaires-week-wrap"><table class="horaires-week"><thead><tr><th class="hw-corner">Employé</th>';
+  dates.forEach(iso => {
+    const d = new Date(iso + 'T12:00:00');
+    const dow = d.getDay();
+    const sched = WEEKLY_SCHEDULE[dow];
+    html += `<th class="${iso === today ? 'hw-today' : ''}">
+      <span class="hw-dow">${DOW_FULL[dow]}</span>
+      <span class="hw-date">${d.getDate()}</span>
+      ${sched ? `<span class="hw-city">${escapeHtml(sched.city)}</span>` : ''}
+    </th>`;
+  });
+  html += '<th class="hw-total">Total</th></tr></thead><tbody>';
+
+  const dayTotals = dates.map(() => 0);
+  employees.forEach(e => {
+    let empTotal = 0;
+    html += `<tr><td class="hw-emp">${escapeHtml(e.name)}</td>`;
+    dates.forEach((iso, i) => {
+      const s = shiftFor(iso, e.id);
+      const min = shiftMinutes(s);
+      empTotal += min; dayTotals[i] += min;
+      html += `<td class="hw-cell ${s ? 'filled' : ''} ${iso === today ? 'hw-today' : ''}" data-date="${iso}" data-emp="${e.id}">`;
+      html += s
+        ? `<span class="hw-shift">${s.start}–${s.end}</span><span class="hw-shift-dur">${fmtDur(min)}</span>`
+        : '<span class="hw-add">＋</span>';
+      html += '</td>';
+    });
+    html += `<td class="hw-total">${fmtDur(empTotal)}</td></tr>`;
+  });
+
+  html += '<tr class="hw-foot"><td class="hw-emp">Total / jour</td>';
+  const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
+  dayTotals.forEach(m => { html += `<td>${fmtDur(m)}</td>`; });
+  html += `<td class="hw-total">${fmtDur(weekTotal)}</td></tr>`;
+  html += '</tbody></table></div>';
+
+  const body = document.getElementById('horaires-body');
+  body.innerHTML = html;
+  body.querySelectorAll('.hw-cell').forEach(c =>
+    c.addEventListener('click', () => openShiftModal(c.dataset.date, c.dataset.emp)));
+}
+
+function renderHorairesMonth() {
+  const d = new Date(horairesAnchor + 'T12:00:00');
+  const year = d.getFullYear(), month = d.getMonth();
+  document.getElementById('horaires-period').textContent =
+    new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  document.getElementById('horaires-hint').textContent = 'Vue du mois : total d\'heures planifiées par jour. Touchez un jour pour l\'ouvrir en vue semaine.';
+
+  const first = new Date(year, month, 1);
+  const startMon = mondayOf(first.toISOString().slice(0, 10));
+  const today = todayISO();
+
+  let html = '<div class="horaires-month"><div class="hm-grid"><div class="hm-head">Lun</div><div class="hm-head">Mar</div><div class="hm-head">Mer</div><div class="hm-head">Jeu</div><div class="hm-head">Ven</div><div class="hm-head">Sam</div><div class="hm-head">Dim</div>';
+  for (let i = 0; i < 42; i++) {
+    const iso = isoAddDays(startMon, i);
+    const cd = new Date(iso + 'T12:00:00');
+    const inMonth = cd.getMonth() === month;
+    const shifts = shiftsForDate(iso);
+    const total = shifts.reduce((s, sh) => s + shiftMinutes(sh), 0);
+    let chips = shifts.map(sh => {
+      const e = employeeById(sh.employeeId);
+      return `<span class="hm-chip" title="${e ? escapeHtml(e.name) : ''} ${sh.start}–${sh.end}">${empInitials(e ? e.name : '?')}</span>`;
+    }).join('');
+    html += `<div class="hm-day${inMonth ? '' : ' hm-out'}${iso === today ? ' hm-today' : ''}" data-date="${iso}">
+      <span class="hm-num">${cd.getDate()}</span>
+      <div class="hm-chips">${chips}</div>
+      ${total ? `<span class="hm-total">${fmtDur(total)}</span>` : ''}
+    </div>`;
+    if (i >= 34 && cd.getMonth() !== month && new Date(isoAddDays(startMon, i - 6) + 'T12:00:00').getMonth() !== month) {
+      // évite d'afficher une 6e semaine entièrement hors mois
+    }
+  }
+  html += '</div></div>';
+
+  const body = document.getElementById('horaires-body');
+  body.innerHTML = html;
+  body.querySelectorAll('.hm-day').forEach(c => c.addEventListener('click', () => {
+    horairesAnchor = c.dataset.date;
+    horairesView = 'week';
+    LS.set('pos_horaires_view', 'week');
+    renderHoraires();
+  }));
+}
+
+// ── Navigation horaires ──
+function horairesShift(dir) {
+  horairesAnchor = horairesView === 'week'
+    ? isoAddDays(horairesAnchor, 7 * dir)
+    : (() => { const d = new Date(horairesAnchor + 'T12:00:00'); d.setMonth(d.getMonth() + dir); return d.toISOString().slice(0, 10); })();
+  renderHoraires();
+}
+document.getElementById('horaires-prev').addEventListener('click', () => horairesShift(-1));
+document.getElementById('horaires-next').addEventListener('click', () => horairesShift(1));
+document.getElementById('horaires-today').addEventListener('click', () => { horairesAnchor = todayISO(); renderHoraires(); });
+document.querySelectorAll('.horaires-view').forEach(b => b.addEventListener('click', () => {
+  horairesView = b.dataset.view;
+  LS.set('pos_horaires_view', horairesView);
+  renderHoraires();
+}));
+document.getElementById('horaires-manage').addEventListener('click', openEmployeeModal);
+document.getElementById('horaires-print').addEventListener('click', () => window.print());
+
+// ── Modal créneau (shift) ──
+let shiftCtx = null; // { date, empId }
+function openShiftModal(dateISO, empId) {
+  const e = employeeById(empId);
+  if (!e) return;
+  shiftCtx = { date: dateISO, empId };
+  const existing = shiftFor(dateISO, empId);
+  const dLabel = new Date(dateISO + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('shift-title').textContent = e.name;
+  document.getElementById('shift-sub').textContent = dLabel;
+  document.getElementById('shift-start').value = existing ? existing.start : DEFAULT_SHIFT.start;
+  document.getElementById('shift-end').value   = existing ? existing.end   : DEFAULT_SHIFT.end;
+  document.getElementById('btn-shift-delete').style.display = existing ? '' : 'none';
+  updateShiftDur();
+  document.getElementById('modal-shift').classList.add('open');
+}
+function closeShiftModal() { document.getElementById('modal-shift').classList.remove('open'); shiftCtx = null; }
+function updateShiftDur() {
+  const min = shiftMinutes({ start: document.getElementById('shift-start').value, end: document.getElementById('shift-end').value });
+  document.getElementById('shift-dur').textContent = min ? `Durée : ${fmtDur(min)}` : '⚠ Fin avant début';
+}
+document.getElementById('shift-start').addEventListener('input', updateShiftDur);
+document.getElementById('shift-end').addEventListener('input', updateShiftDur);
+document.getElementById('btn-shift-cancel').addEventListener('click', closeShiftModal);
+document.getElementById('btn-shift-delete').addEventListener('click', () => {
+  if (!shiftCtx) return;
+  setShift(shiftCtx.date, shiftCtx.empId, null);
+  closeShiftModal();
+  renderHoraires();
+});
+document.getElementById('btn-shift-save').addEventListener('click', () => {
+  if (!shiftCtx) return;
+  const start = document.getElementById('shift-start').value;
+  const end   = document.getElementById('shift-end').value;
+  if (!start || !end) { showToast('Renseignez début et fin.'); return; }
+  if (shiftMinutes({ start, end }) <= 0) { showToast('La fin doit être après le début.'); return; }
+  setShift(shiftCtx.date, shiftCtx.empId, { start, end });
+  closeShiftModal();
+  renderHoraires();
+});
+document.getElementById('modal-shift').addEventListener('click', e => {
+  if (e.target.id === 'modal-shift') closeShiftModal();
+});
+
+// Entrées du menu ☰
+document.getElementById('menu-employees').addEventListener('click', () => { closeMenu(); openEmployeeModal(); });
+document.getElementById('menu-horaires').addEventListener('click', () => {
+  closeMenu();
+  document.querySelector('.tab-btn[data-tab="horaires"]').click();
 });
 
 // ══════════════════ REPORTING ═════════════════════════════════════════════════
@@ -2911,6 +3294,7 @@ const _suppMerged = migrateCategories();   // renomme Suppléments->Supp, Pizzas
 renderCategories();
 renderArticles();
 renderTicketClient();
+renderEmployeeBtn();  // affiche l'employé en poste (Clémence Bailly par défaut)
 renderTestBanner();   // restaure la bannière si le mode formation était actif
 updateTestMenuLabel();
 renderMemo();

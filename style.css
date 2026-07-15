@@ -99,7 +99,8 @@ body {
   font-family: 'Segoe UI', system-ui, sans-serif;
   background: var(--light);
   color: var(--dark);
-  height: 100vh;
+  height: 100vh;       /* repli pour les vieux navigateurs */
+  height: 100dvh;      /* hauteur « dynamique » : se réduit quand la barre d'URL de Safari/Chrome est visible → le bouton Valider reste à l'écran */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1113,8 +1114,13 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 
 /* ── Responsive tweak ── */
 @media (max-width: 900px) {
-  .caisse-layout { grid-template-columns: 1fr; }
-  .ticket-panel { max-height: 50vh; }
+  /* Une seule colonne : le catalogue prend la place restante (et défile),
+     le ticket garde sa hauteur propre → le bouton Valider reste toujours à l'écran. */
+  .caisse-layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .catalogue { min-height: 0; }
+  /* Plafond à 50 % de la hauteur visible, mais jamais sous 300 px : garde toujours
+     de quoi afficher total + paiement + bouton Valider (les lignes défilent). */
+  .ticket-panel { max-height: 50vh; max-height: max(50dvh, 300px); }
   .report-grid { grid-template-columns: 1fr 1fr; }
 }
 
@@ -1288,3 +1294,104 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 }
 .client-history-row .chr-top { display: flex; justify-content: space-between; font-weight: 600; }
 .client-history-row .chr-items { color: var(--mid); font-size: .75rem; margin-top: 2px; }
+
+/* ════════════════ EMPLOYÉ (header + modal) ════════════════ */
+.btn-employee { max-width: 170px; background: rgba(255,255,255,.15); }
+.btn-employee:hover { background: rgba(255,255,255,.3); }
+.memo-emp { color: var(--olive); font-weight: 600; }
+
+.employee-list { display: flex; flex-direction: column; gap: .4rem; max-height: 46vh; overflow-y: auto; }
+.employee-row {
+  display: flex; align-items: center; gap: .3rem;
+  border: 1.5px solid var(--border); border-radius: 10px;
+  background: var(--white); padding: .25rem .3rem .25rem .1rem;
+  transition: border-color .15s, background .15s;
+}
+.employee-row.active { border-color: var(--olive); background: var(--olive-bg); }
+.employee-pick {
+  flex: 1; display: flex; align-items: center; gap: .5rem;
+  background: none; border: none; text-align: left; cursor: pointer;
+  padding: .45rem .6rem; font-size: .92rem; color: var(--dark); border-radius: 8px;
+}
+.employee-pick:hover { background: var(--terracotta-bg); }
+.employee-name { font-weight: 600; }
+.employee-badge {
+  font-size: .68rem; font-weight: 700; color: var(--white);
+  background: var(--olive); border-radius: 20px; padding: .1rem .45rem;
+}
+.employee-star, .employee-edit, .employee-del {
+  background: none; border: none; cursor: pointer; font-size: 1.05rem;
+  padding: .35rem .3rem; border-radius: 8px; line-height: 1;
+}
+.employee-star:hover, .employee-edit:hover, .employee-del:hover { background: var(--terracotta-bg); }
+.employee-star.on { filter: drop-shadow(0 0 1px #e0a800); }
+.employee-add-row { display: flex; gap: .5rem; margin-top: .8rem; }
+
+/* ════════════════ HORAIRES (timesheet) ════════════════ */
+.horaires-layout { display: flex; flex-direction: column; padding: 1rem 1.5rem; gap: .7rem; height: 100%; overflow: hidden; }
+.horaires-controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; flex-shrink: 0; }
+.horaires-view-toggle { display: inline-flex; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; }
+.horaires-view {
+  background: var(--white); border: none; cursor: pointer;
+  padding: .4rem .9rem; font-size: .85rem; font-weight: 600; color: var(--mid);
+}
+.horaires-view.active { background: var(--terracotta); color: var(--white); }
+.horaires-nav { display: flex; align-items: center; gap: .5rem; }
+.horaires-period { font-weight: 700; font-size: .95rem; min-width: 190px; text-align: center; text-transform: capitalize; }
+.horaires-actions { display: flex; gap: .5rem; margin-left: auto; }
+.horaires-hint { font-size: .78rem; color: var(--mid); font-style: italic; flex-shrink: 0; }
+.horaires-body { flex: 1; overflow: auto; }
+
+/* Vue semaine */
+.horaires-week-wrap { overflow-x: auto; }
+.horaires-week { width: 100%; border-collapse: collapse; background: var(--white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); font-size: .84rem; }
+.horaires-week th, .horaires-week td { border: 1px solid var(--border); text-align: center; padding: .35rem .3rem; }
+.horaires-week thead th { background: var(--terracotta-bg); position: sticky; top: 0; z-index: 1; }
+.horaires-week thead .hw-corner, .horaires-week .hw-emp { background: var(--terracotta-bg); text-align: left; font-weight: 700; white-space: nowrap; position: sticky; left: 0; z-index: 1; }
+.hw-dow { display: block; font-weight: 700; }
+.hw-date { display: block; font-size: 1.05rem; color: var(--terracotta); font-weight: 700; }
+.hw-city { display: block; font-size: .68rem; color: var(--mid); font-weight: 400; }
+.horaires-week th.hw-today, .hw-cell.hw-today { background: #fff4ec; }
+.hw-cell { cursor: pointer; min-width: 74px; height: 48px; transition: background .12s; }
+.hw-cell:hover { background: var(--terracotta-bg); }
+.hw-cell.filled { background: var(--olive-bg); }
+.hw-shift { display: block; font-weight: 700; color: var(--olive); }
+.hw-shift-dur { display: block; font-size: .7rem; color: var(--mid); }
+.hw-add { color: var(--border); font-size: 1.3rem; font-weight: 700; }
+.hw-cell:hover .hw-add { color: var(--terracotta); }
+.hw-total { font-weight: 700; color: var(--terracotta); background: var(--terracotta-bg); }
+.hw-foot td { background: var(--terracotta-bg); font-weight: 700; }
+
+/* Vue mois */
+.horaires-month { }
+.hm-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.hm-head { text-align: center; font-weight: 700; font-size: .78rem; color: var(--mid); padding: .3rem 0; }
+.hm-day {
+  background: var(--white); border: 1px solid var(--border); border-radius: 8px;
+  min-height: 78px; padding: .3rem; cursor: pointer; position: relative;
+  display: flex; flex-direction: column; gap: .2rem; transition: border-color .12s, background .12s;
+}
+.hm-day:hover { border-color: var(--terracotta); background: var(--terracotta-bg); }
+.hm-day.hm-out { opacity: .4; }
+.hm-day.hm-today { border-color: var(--terracotta); box-shadow: inset 0 0 0 1px var(--terracotta); }
+.hm-num { font-weight: 700; font-size: .85rem; }
+.hm-chips { display: flex; flex-wrap: wrap; gap: 2px; }
+.hm-chip {
+  font-size: .62rem; font-weight: 700; color: var(--white); background: var(--olive);
+  border-radius: 5px; padding: .05rem .25rem; line-height: 1.3;
+}
+.hm-total { margin-top: auto; font-size: .72rem; font-weight: 700; color: var(--terracotta); }
+
+/* Modal créneau */
+.shift-times { display: flex; gap: .8rem; }
+.shift-times label { flex: 1; display: flex; flex-direction: column; gap: .2rem; }
+.shift-dur { font-size: .85rem; font-weight: 600; color: var(--olive); min-height: 1.2rem; }
+
+@media print {
+  header, .horaires-controls, .horaires-hint, #test-banner, .toast { display: none !important; }
+  .tab-content { display: none !important; }
+  #tab-horaires.tab-content.active { display: block !important; overflow: visible !important; }
+  .horaires-layout { padding: 0; height: auto; overflow: visible; }
+  .horaires-body { overflow: visible; }
+  body { height: auto; overflow: visible; }
+}

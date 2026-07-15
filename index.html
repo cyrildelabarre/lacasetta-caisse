@@ -50,10 +50,12 @@
       <button class="tab-btn" data-tab="memo">Mémo du jour</button>
       <button class="tab-btn" data-tab="dashboard">📊 Tableau</button>
       <button class="tab-btn" data-tab="reporting">Reporting</button>
+      <button class="tab-btn" data-tab="horaires">🗓 Horaires</button>
       <button class="tab-btn" data-tab="clients">👥 Clients</button>
     </nav>
     <div class="header-info">
       <span id="date-display"></span>
+      <button class="btn-location btn-employee" id="btn-employee" title="Employé en poste — toucher pour changer">👤 <span id="employee-label">—</span></button>
       <button class="btn-location" id="btn-location" title="Changer l'emplacement">📍 <span id="location-label">—</span></button>
       <button class="btn-lock" id="btn-menu" title="Menu des fonctions">☰ <span class="btn-label">Menu</span></button>
       <button class="btn-lock" id="btn-lock" title="Verrouiller l'écran (code PIN pour rouvrir)">🔒 <span class="btn-label">Verrouiller</span></button>
@@ -267,6 +269,30 @@
     </div>
   </section>
 
+  <!-- ───── HORAIRES (TIMESHEET) ───── -->
+  <section id="tab-horaires" class="tab-content">
+    <div class="horaires-layout">
+      <div class="horaires-controls">
+        <div class="horaires-view-toggle">
+          <button class="horaires-view active" data-view="week">Semaine</button>
+          <button class="horaires-view" data-view="month">Mois</button>
+        </div>
+        <div class="horaires-nav">
+          <button class="btn-secondary" id="horaires-prev" title="Précédent">◀</button>
+          <span id="horaires-period" class="horaires-period"></span>
+          <button class="btn-secondary" id="horaires-next" title="Suivant">▶</button>
+          <button class="btn-ghost" id="horaires-today">Aujourd'hui</button>
+        </div>
+        <div class="horaires-actions">
+          <button class="btn-secondary" id="horaires-manage" title="Gérer les employés">👤 Employés</button>
+          <button class="btn-secondary" id="horaires-print" title="Exporter / Imprimer le planning">🖨️ Imprimer</button>
+        </div>
+      </div>
+      <p class="horaires-hint" id="horaires-hint"></p>
+      <div class="horaires-body" id="horaires-body"></div>
+    </div>
+  </section>
+
   <!-- Modal fiche client (création / édition) -->
   <div class="modal-overlay" id="modal-client">
     <div class="modal">
@@ -326,6 +352,42 @@
     </div>
   </div>
 
+  <!-- Modal employé en poste (choix + gestion) -->
+  <div class="modal-overlay" id="modal-employee">
+    <div class="modal" style="max-width:380px">
+      <h3>👤 Employé en poste</h3>
+      <p style="font-size:.85rem;color:var(--mid);margin:.2rem 0 .8rem">Touchez un employé pour l'activer sur la caisse. L'étoile ⭐ marque l'employé activé par défaut au démarrage.</p>
+      <div id="employee-list" class="employee-list"></div>
+      <div class="employee-add-row">
+        <input type="text" id="employee-new-name" placeholder="Nom du nouvel employé…" style="flex:1;box-sizing:border-box">
+        <button class="btn-primary" id="btn-employee-add">➕ Ajouter</button>
+      </div>
+      <button class="btn-secondary" id="btn-employee-close" style="width:100%;margin-top:1rem">Fermer</button>
+    </div>
+  </div>
+
+  <!-- Modal édition d'un créneau (shift) -->
+  <div class="modal-overlay" id="modal-shift">
+    <div class="modal modal-sm">
+      <h3 id="shift-title">Créneau</h3>
+      <p id="shift-sub" style="font-size:.85rem;color:var(--mid);margin:.1rem 0 .6rem"></p>
+      <div class="shift-times">
+        <label>Début
+          <input type="time" id="shift-start" step="300">
+        </label>
+        <label>Fin
+          <input type="time" id="shift-end" step="300">
+        </label>
+      </div>
+      <p class="shift-dur" id="shift-dur"></p>
+      <div class="modal-actions">
+        <button class="btn-danger" id="btn-shift-delete" style="margin-right:auto">🗑 Retirer</button>
+        <button class="btn-ghost" id="btn-shift-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-shift-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal menu des fonctions -->
   <div class="modal-overlay" id="modal-menu">
     <div class="modal" style="max-width:340px">
@@ -338,6 +400,9 @@
         <button class="menu-item" id="menu-categories">🗂 Gérer les catégories<small>Renommer et changer l'ordre des onglets</small></button>
         <button class="menu-item" id="menu-inactive">🚫 Articles inactifs<small>Voir et réactiver les articles masqués</small></button>
         <button class="menu-item" id="menu-temp">🌡️ Relevés de température<small>Frigo &amp; congélateur (HACCP)</small></button>
+        <p class="menu-section">👤 Équipe &amp; horaires</p>
+        <button class="menu-item" id="menu-employees">👤 Employés<small>Choisir l'employé en poste et l'employé par défaut</small></button>
+        <button class="menu-item" id="menu-horaires">🗓 Planning des horaires<small>Créneaux à réaliser — vue semaine &amp; mois</small></button>
         <p class="menu-section">👥 Clients</p>
         <button class="menu-item" id="menu-clients">👥 Fiches clients<small>Fidélité, coordonnées et historique d'achats</small></button>
         <p class="menu-section">⚙️ Réglages &amp; sécurité</p>
