@@ -199,7 +199,7 @@ function insightLines(tk, ln) {
     `👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`,
     '━━━  🍕  CATÉGORIES  ━━━',
     ...topCat.map(([cat,ca],i) => `${i===0?'🥇':i===1?'🥈':'🥉'}  ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
-    `👉  Astuce : les suppléments représentent ${pct(catCA['Suppléments']||0, totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
+    `👉  Astuce : les suppléments représentent ${pct((catCA['Supp']||0)+(catCA['Suppléments']||0), totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
     '━━━  ⏰  HEURES DE POINTE  ━━━',
     `🔥  Heure la plus chargée : ${g(topHeure,0)}h → ${f(gv(topHeure,0))}`,
     `🔥  2e heure : ${g(topHeure,1)}h → ${f(gv(topHeure,1))}`,
@@ -675,7 +675,7 @@ function buildAndSendReport(tk, ln, opts) {
   const attach = [
     { label:'🥤 Boissons',    re:/boisson/i },
     { label:'🍮 Desserts',    re:/dessert/i },
-    { label:'🧀 Suppléments', re:/suppl/i },
+    { label:'🧀 Suppléments', re:/supp/i },
   ].map(d => {
     const n = tk.filter(t => Object.keys(t.cats||{}).some(c => d.re.test(c))).length;
     const p = nbTk ? Math.round(n/nbTk*100) : 0;

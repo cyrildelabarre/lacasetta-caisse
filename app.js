@@ -173,11 +173,11 @@ function defaultArticles() {
     { id: uid(), name: 'Carbonara (G)',          category: 'Pizzas grandes', price: 12,   emoji: '🥓' },
     { id: uid(), name: 'Pollo e Gorgonzola (G)', category: 'Pizzas grandes', price: 14,   emoji: '🍗' },
     // Suppléments
-    { id: uid(), name: 'Jambon / Salsiccia / Guanciale / Poulet', category: 'Suppléments', price: 3,    emoji: '➕' },
-    { id: uid(), name: 'Fromages',              category: 'Suppléments',    price: 2.5,  emoji: '🧀' },
-    { id: uid(), name: 'Tomates confites / Poivrons rôtis',       category: 'Suppléments', price: 2,    emoji: '🍅' },
-    { id: uid(), name: 'Champignons / Roquette / Pomme de terre / Olives', category: 'Suppléments', price: 1.5, emoji: '🥗' },
-    { id: uid(), name: 'Sauces',                category: 'Suppléments',    price: 1,    emoji: '🥫' },
+    { id: uid(), name: 'Jambon / Salsiccia / Guanciale / Poulet', category: 'Supp', price: 3,    emoji: '➕' },
+    { id: uid(), name: 'Fromages',              category: 'Supp',    price: 2.5,  emoji: '🧀' },
+    { id: uid(), name: 'Tomates confites / Poivrons rôtis',       category: 'Supp', price: 2,    emoji: '🍅' },
+    { id: uid(), name: 'Champignons / Roquette / Pomme de terre / Olives', category: 'Supp', price: 1.5, emoji: '🥗' },
+    { id: uid(), name: 'Sauces',                category: 'Supp',    price: 1,    emoji: '🥫' },
     // Desserts
     { id: uid(), name: 'Tiramisu',              category: 'Desserts',       price: 4.5,  emoji: '🍮' },
     { id: uid(), name: 'Panna cotta',           category: 'Desserts',       price: 4,    emoji: '🍮' },
@@ -529,18 +529,46 @@ function categories() {
   return ['Tous', ...orderedCategories()];
 }
 
+// Catégorie « Suppléments » fusionnée dans « Supp » (nom canonique unique).
+const CAT_CANON = { 'Suppléments': 'Supp' };
+function canonCat(c) { return CAT_CANON[c] || c; }
+
 // Libellés courts + couleur par catégorie (les valeurs réelles servent au filtrage).
 const CAT_LABELS = {
   'Tous': 'Tous', 'Pizzas grandes': 'Grandes', 'Pizzas petites': 'Petites',
-  'Suppléments': 'Supp', 'Desserts': 'Dessert'
+  'Supp': 'Supp', 'Desserts': 'Dessert'
 };
 const CAT_COLORS = {
   'Tous': '#89310B', 'Pizzas grandes': '#2f7d8a', 'Pizzas petites': '#76894F',
-  'Suppléments': '#c9822b', 'Desserts': '#8e5572'
+  'Supp': '#c9822b', 'Desserts': '#8e5572'
 };
 const CAT_PALETTE = ['#89310B', '#2f7d8a', '#76894F', '#c9822b', '#8e5572', '#4a6fa5', '#a5504a'];
 // Ordre d'affichage souhaité (les inconnues suivent, dans leur ordre existant).
-const CAT_ORDER = ['Pizzas grandes', 'Pizzas petites', 'Suppléments', 'Desserts'];
+const CAT_ORDER = ['Pizzas grandes', 'Pizzas petites', 'Supp', 'Desserts'];
+
+// Migration ponctuelle : fusionne l'ancienne catégorie « Suppléments » dans « Supp »
+// (et supprime un éventuel doublon d'article de même nom déjà présent en « Supp »).
+function mergeSuppCategory() {
+  let changed = false;
+  const seen = new Set(articles.filter(a => a.category === 'Supp').map(a => a.name));
+  const kept = [];
+  articles.forEach(a => {
+    if (a.category === 'Suppléments') {
+      changed = true;
+      if (seen.has(a.name)) return;   // doublon exact : on retire l'ancien
+      seen.add(a.name);
+      a.category = 'Supp';
+    }
+    kept.push(a);
+  });
+  if (changed) {
+    articles = kept;
+    catalogueUpdatedAt = new Date().toISOString();
+    LS.set('pos_articles', articles);
+    LS.set('pos_catalogue_updatedAt', catalogueUpdatedAt);
+  }
+  return changed;
+}
 
 function catLabel(cat) { return CAT_LABELS[cat] || cat; }
 function catColor(cat, i) { return CAT_COLORS[cat] || CAT_PALETTE[i % CAT_PALETTE.length]; }
@@ -2011,7 +2039,7 @@ function buildInsights(txs) {
     `👉 Envisage de les retirer ou de les proposer en "offre du jour".`,
     '━━━ 🍕 Catégories',
     ...topCat.map(([cat,ca],i)=>`${i===0?'🥇':i===1?'🥈':'🥉'} ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
-    `👉 Les suppléments = ${pct(catCA['Suppléments']||0,totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
+    `👉 Les suppléments = ${pct((catCA['Supp']||0)+(catCA['Suppléments']||0),totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
     '━━━ ⏰ Heures de pointe',
     `🔥 Heure la plus chargée : ${g(topHeure,0)}h → ${f(gv(topHeure,0))}`,
     `🔥 2e heure : ${g(topHeure,1)}h → ${f(gv(topHeure,1))}`,
@@ -2202,7 +2230,7 @@ function attachementStats(txs) {
   const defs = [
     { label: '🥤 Boissons',    re: /boisson/i },
     { label: '🍮 Desserts',    re: /dessert/i },
-    { label: '🧀 Suppléments', re: /suppl/i },
+    { label: '🧀 Suppléments', re: /supp/i },
   ];
   return defs.map(d => {
     const n = txs.filter(t => t.lines.some(l => d.re.test(l.category || ''))).length;
@@ -2571,6 +2599,7 @@ window.addTransaction = function(tx) {
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+const _suppMerged = mergeSuppCategory();   // fusionne « Suppléments » -> « Supp » si besoin
 renderCategories();
 renderArticles();
 renderTicketClient();
@@ -2580,3 +2609,4 @@ renderMemo();
 renderReporting();
 syncToSheets();  // sync des ventes au démarrage
 pullCatalogue(); // récupère le catalogue partagé au démarrage
+if (_suppMerged) pushCatalogue();  // propage la fusion au cloud
