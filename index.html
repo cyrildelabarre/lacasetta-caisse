@@ -50,8 +50,10 @@
       <button class="tab-btn" data-tab="memo">Mémo du jour</button>
       <button class="tab-btn" data-tab="dashboard">📊 Tableau</button>
       <button class="tab-btn" data-tab="reporting">Reporting</button>
-      <button class="tab-btn" data-tab="horaires">🗓 Horaires</button>
-      <button class="tab-btn" data-tab="clients">👥 Clients</button>
+      <!-- Horaires & Clients : accessibles via le menu ☰ ; l'onglet ne s'affiche
+           dans la barre que lorsqu'il est actif (repère visuel) -->
+      <button class="tab-btn tab-menu-only" data-tab="horaires">🗓 Horaires</button>
+      <button class="tab-btn tab-menu-only" data-tab="clients">👥 Clients</button>
     </nav>
     <div class="header-info">
       <span id="date-display"></span>
@@ -80,6 +82,8 @@
           <div class="ticket-header-btns">
             <button class="btn-discount" id="btn-free-pizza" title="Offrir des articles : activez puis touchez les articles à passer à 0 €">🎁 Offrir</button>
             <button class="btn-discount btn-discount-alt" id="btn-cheapest-pizza" title="Fidélité : offrir la pizza la moins chère du panier">🍕 Fidélité</button>
+            <button class="btn-discount fx-new" id="btn-ticket-discount" title="Remise sur tout le ticket (% ou €)">🏷️ Remise</button>
+            <button class="btn-discount fx-new" id="btn-holds" title="Tickets en attente : mettre de côté / reprendre">⏸ <span id="holds-label">Attente</span></button>
             <button class="btn-ghost" id="btn-clear-ticket">Vider</button>
           </div>
         </div>
@@ -87,6 +91,10 @@
         <div id="edit-tx-banner" class="edit-tx-banner" style="display:none"></div>
         <div class="ticket-lines" id="ticket-lines">
           <p class="empty-msg">Aucun article</p>
+        </div>
+        <div class="ticket-discount-row fx-new" id="ticket-discount-row" style="display:none">
+          <span>🏷️ <span id="ticket-discount-label">Remise</span> <button class="tdr-clear" id="btn-discount-clear" title="Retirer la remise">✕</button></span>
+          <span id="ticket-discount-amt"></span>
         </div>
         <div class="ticket-total">
           <span>Total</span>
@@ -97,11 +105,17 @@
           <div class="payment-btns">
             <button class="pay-btn active" data-method="especes">💶 Espèces</button>
             <button class="pay-btn" data-method="carte">💳 Carte</button>
+            <button class="pay-btn fx-new" data-method="mixte">💶+💳 Mixte</button>
           </div>
           <div id="cash-change-row" class="cash-change-row">
             <label>Montant remis</label>
             <input type="number" id="cash-given" min="0" step="0.01" placeholder="0,00">
             <span>Rendu : <strong id="cash-change">—</strong></span>
+          </div>
+          <div id="split-row" class="cash-change-row fx-new" style="display:none">
+            <label>Espèces</label>
+            <input type="number" id="split-cash" min="0" step="0.01" placeholder="0,00">
+            <span>Carte : <strong id="split-card">—</strong></span>
           </div>
         </div>
         <button class="btn-validate" id="btn-validate">✔ Valider le paiement</button>
@@ -408,26 +422,28 @@
     </div>
   </div>
 
-  <!-- Modal menu des fonctions -->
+  <!-- Modal menu des fonctions (compact : 2 colonnes, liste scrollable) -->
   <div class="modal-overlay" id="modal-menu">
-    <div class="modal" style="max-width:340px">
+    <div class="modal modal-menu">
       <h3>☰ Menu</h3>
       <div class="menu-list">
         <p class="menu-section">🍕 Catalogue</p>
-        <button class="menu-item" id="menu-add-article">➕ Ajouter un article<small>Créer un nouvel article dans le catalogue</small></button>
-        <button class="menu-item" id="menu-edit-article">✏️ Modifier un article<small>Changer le nom, le prix ou supprimer</small></button>
-        <button class="menu-item" id="menu-reorder">🔀 Déplacer les articles<small>Réorganiser l'ordre dans le catalogue</small></button>
-        <button class="menu-item" id="menu-categories">🗂 Gérer les catégories<small>Renommer et changer l'ordre des onglets</small></button>
-        <button class="menu-item" id="menu-inactive">🚫 Articles inactifs<small>Voir et réactiver les articles masqués</small></button>
-        <button class="menu-item" id="menu-temp">🌡️ Relevés de température<small>Frigo &amp; congélateur (HACCP)</small></button>
-        <p class="menu-section">👤 Équipe &amp; horaires</p>
-        <button class="menu-item" id="menu-employees">👤 Employés<small>Choisir l'employé en poste et l'employé par défaut</small></button>
-        <button class="menu-item" id="menu-horaires">🗓 Planning des horaires<small>Créneaux à réaliser — vue semaine &amp; mois</small></button>
-        <p class="menu-section">👥 Clients</p>
-        <button class="menu-item" id="menu-clients">👥 Fiches clients<small>Fidélité, coordonnées et historique d'achats</small></button>
+        <button class="menu-item" id="menu-add-article">➕ Ajouter un article<small>Nouvel article au catalogue</small></button>
+        <button class="menu-item" id="menu-edit-article">✏️ Modifier un article<small>Nom, prix ou suppression</small></button>
+        <button class="menu-item" id="menu-reorder">🔀 Déplacer les articles<small>Réorganiser l'ordre</small></button>
+        <button class="menu-item" id="menu-categories">🗂 Catégories<small>Renommer, changer l'ordre</small></button>
+        <button class="menu-item" id="menu-inactive">🚫 Articles inactifs<small>Voir et réactiver</small></button>
+        <button class="menu-item fx-new" id="menu-soldout">⛔ Épuisé aujourd'hui<small>Rupture du jour</small></button>
+        <p class="menu-section">💶 Journée</p>
+        <button class="menu-item fx-new" id="menu-closure">🧾 Clôture de caisse<small>Espèces, écart, Z du jour</small></button>
+        <button class="menu-item" id="menu-temp">🌡️ Températures<small>Relevés HACCP</small></button>
+        <p class="menu-section">👥 Équipe &amp; clients</p>
+        <button class="menu-item" id="menu-employees">👤 Employés<small>En poste &amp; par défaut</small></button>
+        <button class="menu-item" id="menu-horaires">🗓 Planning horaires<small>Vue semaine &amp; mois</small></button>
+        <button class="menu-item" id="menu-clients">👥 Fiches clients<small>Fidélité &amp; historique</small></button>
         <p class="menu-section">⚙️ Réglages &amp; sécurité</p>
-        <button class="menu-item" id="menu-sync">🔄 Synchroniser les données<small>Envoyer et récupérer ventes, catalogue, relevés</small></button>
-        <button class="menu-item" id="menu-pin">🔑 Changer le code PIN<small>Modifier le code de déverrouillage</small></button>
+        <button class="menu-item" id="menu-sync">🔄 Synchroniser<small>Ventes, catalogue, relevés</small></button>
+        <button class="menu-item" id="menu-pin">🔑 Code PIN<small>Changer le code</small></button>
         <button class="menu-item menu-item-test" id="menu-testmode">🧪 Mode formation<small>Ventes de test isolées, non comptées</small></button>
       </div>
       <button class="btn-secondary" id="btn-menu-close" style="width:100%;margin-top:1rem">Fermer</button>
@@ -559,6 +575,75 @@
       <div class="modal-actions">
         <button class="btn-ghost" id="btn-pin-cancel">Annuler</button>
         <button class="btn-primary" id="btn-pin-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal remise sur le ticket (mode formation) -->
+  <div class="modal-overlay" id="modal-discount">
+    <div class="modal modal-sm">
+      <h3>🏷️ Remise sur le ticket</h3>
+      <p style="font-size:.85rem;color:var(--mid);margin:.2rem 0 .6rem">Choisissez un pourcentage, ou saisissez une valeur personnalisée.</p>
+      <div class="discount-presets" id="discount-presets"></div>
+      <label>Valeur personnalisée</label>
+      <div class="discount-custom">
+        <input type="number" id="discount-value" min="0" step="0.5" placeholder="10">
+        <div class="discount-type">
+          <button class="dtype-btn active" data-dtype="pct">%</button>
+          <button class="dtype-btn" data-dtype="eur">€</button>
+        </div>
+      </div>
+      <p class="discount-preview" id="discount-preview"></p>
+      <div class="modal-actions">
+        <button class="btn-danger" id="btn-discount-remove" style="display:none;margin-right:auto">✕ Retirer</button>
+        <button class="btn-ghost" id="btn-discount-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-discount-apply">Appliquer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal tickets en attente (mode formation) -->
+  <div class="modal-overlay" id="modal-holds">
+    <div class="modal" style="max-width:440px">
+      <h3>⏸ Tickets en attente</h3>
+      <div id="hold-current" class="hold-current"></div>
+      <div id="holds-list" class="holds-list"></div>
+      <button class="btn-secondary" id="btn-holds-close" style="width:100%;margin-top:1rem">Fermer</button>
+    </div>
+  </div>
+
+  <!-- Modal clôture de caisse (mode formation) -->
+  <div class="modal-overlay" id="modal-closure">
+    <div class="modal" style="max-width:460px">
+      <h3>🧾 Clôture de caisse — <span id="closure-date-label"></span></h3>
+      <div id="closure-summary" class="closure-summary"></div>
+      <div class="closure-fields">
+        <label>Fond de caisse (début)
+          <input type="number" id="closure-float" min="0" step="0.01" placeholder="0,00">
+        </label>
+        <label>Espèces comptées en fin de service
+          <input type="number" id="closure-counted" min="0" step="0.01" placeholder="0,00">
+        </label>
+      </div>
+      <p class="closure-gap" id="closure-gap"></p>
+      <label>Notes</label>
+      <input type="text" id="closure-notes" placeholder="Remarques, justification d'un écart…">
+      <div class="modal-actions">
+        <button class="btn-secondary" id="btn-closure-export">⬇ CSV</button>
+        <button class="btn-ghost" id="btn-closure-cancel">Fermer</button>
+        <button class="btn-primary" id="btn-closure-save">💾 Clôturer la journée</button>
+      </div>
+      <div id="closure-history" class="closure-history"></div>
+    </div>
+  </div>
+
+  <!-- Modal reçu client (mode formation) -->
+  <div class="modal-overlay" id="modal-receipt">
+    <div class="modal modal-sm">
+      <div id="receipt-body" class="receipt-body"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="btn-receipt-print">🖨️ Imprimer</button>
+        <button class="btn-primary" id="btn-receipt-close">Fermer</button>
       </div>
     </div>
   </div>

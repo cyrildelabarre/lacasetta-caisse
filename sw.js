@@ -1,4 +1,4 @@
-const CACHE = 'lacasetta-caisse-v4';
+const CACHE = 'lacasetta-caisse-v5';
 const ASSETS = [
   '/',
   '/index.html',

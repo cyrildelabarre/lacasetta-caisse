@@ -134,6 +134,10 @@ header {
 }
 .tab-btn:hover { background: rgba(255,255,255,.25); color: var(--white); }
 .tab-btn.active { background: var(--white); color: var(--terracotta); font-weight: 700; }
+/* Onglets accessibles uniquement via le menu ☰ : masqués dans la barre,
+   sauf quand ils sont actifs (on voit alors où l'on se trouve) */
+.tab-btn.tab-menu-only { display: none; }
+.tab-btn.tab-menu-only.active { display: block; }
 
 .header-info { font-size: .85rem; opacity: .85; white-space: nowrap; display: flex; align-items: center; gap: .7rem; }
 
@@ -408,23 +412,37 @@ header {
 .article-name { font-size: .78rem; font-weight: 600; color: var(--dark); margin-bottom: .2rem; }
 .article-price { font-size: .85rem; color: var(--terracotta); font-weight: 700; }
 
-/* ── Menu des fonctions (☰) ── */
-.menu-list { display: flex; flex-direction: column; gap: .5rem; }
+/* ── Menu des fonctions (☰) : modal élargie, grille compacte 2 colonnes,
+      liste scrollable (le titre et « Fermer » restent visibles) ── */
+.modal.modal-menu { max-width: 560px; max-height: min(88vh, 88dvh); }
+.menu-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .45rem;
+  overflow-y: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  padding-right: .15rem;
+}
 .menu-item {
   display: block; width: 100%; text-align: left;
   background: var(--terracotta-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: .7rem .9rem;
-  font-size: .95rem; font-weight: 600; color: var(--dark);
+  padding: .55rem .7rem;
+  font-size: .88rem; font-weight: 600; color: var(--dark);
   cursor: pointer; transition: background .15s, border-color .15s;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
-.menu-item small { display: block; font-weight: 400; font-size: .75rem; color: var(--mid); margin-top: 2px; }
+.menu-item small { display: block; font-weight: 400; font-size: .7rem; color: var(--mid); margin-top: 2px; }
 .menu-item:hover { border-color: var(--terracotta); background: #fff4ec; }
+/* Sur petit écran : une seule colonne */
+@media (max-width: 560px) {
+  .menu-list { grid-template-columns: 1fr; }
+}
 
-/* Item « Mode formation » + état actif */
-.menu-item-test { background: #fff6e6; border-color: #f0c675; }
+/* Item « Mode formation » + état actif (pleine largeur, bien repérable) */
+.menu-item-test { grid-column: 1 / -1; background: #fff6e6; border-color: #f0c675; }
 .menu-item-test:hover { background: #ffedcc; border-color: #e0a93a; }
 .menu-item-test.active { background: #ffe1b3; border-color: #e0a93a; color: #7a4e00; }
 
@@ -1139,14 +1157,15 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
   .ticket-client-btn { padding: .35rem .6rem; font-size: .78rem; }
 }
 
-/* ── Sections du menu ☰ ── */
+/* ── Sections du menu ☰ (traversent les 2 colonnes de la grille) ── */
 .menu-section {
+  grid-column: 1 / -1;
   font-size: .7rem;
   font-weight: 700;
   letter-spacing: .07em;
   text-transform: uppercase;
   color: var(--mid);
-  margin: .55rem 0 -.15rem;
+  margin: .45rem 0 -.15rem;
   padding-left: .15rem;
 }
 .menu-section:first-child { margin-top: 0; }
@@ -1418,3 +1437,116 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 .et-num { font-size: .78rem; font-weight: 700; }
 .et-shift { font-size: .72rem; font-weight: 700; color: var(--olive); line-height: 1.15; }
 .et-shift-dur { font-size: .64rem; color: var(--mid); }
+
+/* ════════════════ MODE FORMATION — NOUVELLES FONCTIONS ════════════════
+   Les éléments .fx-new (remise, attente, mixte, épuisé, clôture, reçu) ne sont
+   visibles qu'en mode formation. Pour les déployer en caisse réelle, supprimer
+   la règle ci-dessous. */
+body:not(.testmode) .fx-new { display: none !important; }
+
+/* ── 🏷️ Remise : ligne au-dessus du total du ticket ── */
+.ticket-discount-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .45rem 1rem; font-size: .9rem; font-weight: 700;
+  color: var(--terracotta); background: var(--terracotta-bg);
+  border-top: 1px dashed var(--border);
+}
+.tdr-clear {
+  background: none; border: none; color: var(--danger); cursor: pointer;
+  font-size: .85rem; padding: 0 .25rem; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── 🏷️ Modal remise ── */
+.discount-presets { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
+.discount-custom { display: flex; gap: .5rem; align-items: stretch; }
+.discount-custom input { flex: 1; }
+.discount-type { display: flex; gap: .3rem; }
+.dtype-btn {
+  min-width: 44px; border: 1.5px solid var(--border); background: var(--white);
+  border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.dtype-btn.active { background: var(--terracotta); color: var(--white); border-color: var(--terracotta); }
+.discount-preview { min-height: 1.2rem; font-size: .85rem; font-weight: 600; color: var(--olive); margin-top: .5rem; }
+
+/* ── ⏸ Tickets en attente ── */
+.hold-current { margin: .4rem 0 .8rem; }
+.hold-put-row { display: flex; gap: .5rem; margin-top: .3rem; }
+.hold-put-row input { flex: 1; box-sizing: border-box; }
+.holds-list { display: flex; flex-direction: column; gap: .45rem; max-height: 45vh; overflow-y: auto; }
+.hold-row {
+  display: flex; align-items: center; gap: .55rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: .5rem .65rem; background: var(--white);
+}
+.hold-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
+.hold-info small { color: var(--mid); font-size: .74rem; overflow: hidden; text-overflow: ellipsis; }
+.hold-total { font-weight: 700; color: var(--terracotta); white-space: nowrap; }
+.hold-row .btn-primary, .hold-row .btn-danger { padding: .35rem .55rem; font-size: .8rem; }
+
+/* ── ⛔ Article épuisé du jour ── */
+.article-card.soldout { opacity: .55; }
+.article-card.soldout .article-name { text-decoration: line-through; }
+.article-soldout-badge {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  background: var(--danger); color: var(--white);
+  font-size: .62rem; font-weight: 700; border-radius: 5px;
+  padding: .1rem .3rem; line-height: 1.3;
+}
+
+/* ── 🧾 Clôture de caisse ── */
+.closure-summary { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0 .7rem; }
+.closure-fields { display: flex; gap: .8rem; }
+.closure-fields label { flex: 1; display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; }
+.closure-gap { min-height: 1.2rem; font-size: .88rem; font-weight: 700; color: var(--mid); margin: .5rem 0 .3rem; }
+.closure-gap.ok { color: var(--success); }
+.closure-gap.ko { color: var(--danger); }
+.closure-history { margin-top: .4rem; }
+.closure-hrow {
+  display: flex; justify-content: space-between; gap: .6rem;
+  font-size: .8rem; padding: .3rem 0; border-top: 1px dashed var(--border);
+}
+.closure-hrow .ok { color: var(--success); font-weight: 700; }
+.closure-hrow .ko { color: var(--danger); font-weight: 700; }
+
+/* ── 🧾 Reçu client ── */
+.memo-actions .btn-receipt-tx {
+  display: inline-flex; align-items: center;
+  background: var(--terracotta-bg); color: var(--terracotta);
+  border: 1px solid var(--terracotta-light); border-radius: 10px;
+  padding: .3rem .55rem; font-size: .95rem; margin-right: .3rem;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: background .15s, color .15s, transform .1s;
+}
+.memo-actions .btn-receipt-tx:hover { background: var(--terracotta); color: #fff; }
+.memo-table tbody tr.armed .btn-receipt-tx { display: none; }
+body:not(.testmode) .memo-actions .btn-receipt-tx { display: none !important; }
+
+.receipt-body {
+  font-family: 'Courier New', monospace; font-size: .85rem; color: var(--dark);
+  background: var(--white); padding: .3rem .2rem;
+}
+.receipt-head { text-align: center; border-bottom: 1px dashed var(--dark); padding-bottom: .5rem; margin-bottom: .5rem; }
+.receipt-logo { font-size: 1.6rem; }
+.receipt-title { font-size: 1.15rem; font-weight: 700; letter-spacing: .06em; }
+.receipt-sub { font-size: .75rem; color: var(--mid); }
+.receipt-lines { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .5rem; }
+.receipt-line { display: flex; justify-content: space-between; gap: .8rem; }
+.receipt-line span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.receipt-disc { color: var(--terracotta); font-weight: 700; }
+.receipt-total {
+  display: flex; justify-content: space-between; font-size: 1.05rem; font-weight: 700;
+  border-top: 1px dashed var(--dark); padding-top: .4rem;
+}
+.receipt-pay { font-size: .78rem; color: var(--mid); margin-top: .25rem; }
+.receipt-thanks { text-align: center; margin-top: .7rem; font-weight: 700; }
+
+@media print {
+  body.printing-receipt > *:not(#modal-receipt) { display: none !important; }
+  body.printing-receipt #modal-receipt {
+    position: static; display: block !important; background: none; padding: 0;
+  }
+  body.printing-receipt #modal-receipt .modal { max-width: 320px; width: auto; box-shadow: none; margin: 0; }
+  body.printing-receipt #modal-receipt .modal-actions { display: none !important; }
+}

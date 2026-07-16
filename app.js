@@ -137,6 +137,7 @@ let articles = (LS.get('pos_catalogue_version', 0) < CATALOGUE_VERSION)
   ? (() => { const a = defaultArticles(); LS.set('pos_articles', a); LS.set('pos_catalogue_version', CATALOGUE_VERSION); return a; })()
   : LS.get('pos_articles', defaultArticles());
 let ticket    = [];
+let ticketDiscount = null;   // remise sur tout le ticket : { type: 'pct'|'eur', value }
 let payMethod = 'especes';
 let currentTx = null;
 let editingTxId = null;      // vente rouverte en cours de complément
@@ -343,7 +344,7 @@ function cancelEdit() {
   ticket = [];
   exitOfferMode();
   setTicketClient(null);
-  document.getElementById('cash-given').value = '';
+  document.getElementById('cash-given').value = ''; document.getElementById('split-cash').value = '';
   renderEditBanner();
   renderTicket();
 }
@@ -458,7 +459,8 @@ function renderDashboard() {
     byDay[d].n++; byDay[d].ca += t.total; byDay[d].art += t.lines.reduce((a, l) => a + l.qty, 0);
     A(byLoc, t.location || '(non défini)', t.total);
     A(byHour, String(new Date(t.date).getHours()).padStart(2, '0'), t.total);
-    byPay[t.method] = (byPay[t.method] || 0) + t.total;
+    const pp = payParts(t);
+    byPay.especes += pp.especes; byPay.carte += pp.carte;
     t.lines.forEach(l => { A(byCat, l.category || '—', l.subtotal); if (/pizza/i.test(l.category || '')) A(byArt, l.name, l.subtotal); });
   });
 
@@ -530,7 +532,7 @@ function renderDashboard() {
 // ── Date display ─────────────────────────────────────────────────────────────
 function updateDateDisplay() {
   document.getElementById('date-display').textContent =
-    new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 updateDateDisplay();
 setInterval(updateDateDisplay, 60000);
@@ -695,12 +697,14 @@ function renderArticles() {
   }
   list.forEach(art => {
     const inactive = art.active === false;
+    const soldOut  = isSoldOut(art.id);
     const card = document.createElement('div');
-    card.className = 'article-card' + (inactive ? ' inactive' : '');
+    card.className = 'article-card' + (inactive ? ' inactive' : '') + (soldOut ? ' soldout' : '');
     card.dataset.artId = art.id;
     card.innerHTML = `
       <span class="drag-handle">⠿</span>
       ${inactive ? '<span class="article-inactive-badge">Inactif</span>' : ''}
+      ${soldOut ? '<span class="article-soldout-badge">⛔ Épuisé</span>' : ''}
       <span class="article-emoji">${art.emoji}</span>
       <div class="article-name">${art.name}</div>
       <div class="article-price">${fmtEur(art.price)}</div>
@@ -708,6 +712,7 @@ function renderArticles() {
     card.addEventListener('click', () => {
       if (editMode) return; // en mode déplacement, le clic n'ajoute pas au ticket
       if (pickEditMode) { exitPickEditMode(); openArticleModal(art); return; } // mode « modifier un article »
+      if (soldOutMode) { toggleSoldOut(art.id); renderArticles(); return; }    // mode « marquer épuisé »
       addToTicket(art);
     });
     grid.appendChild(card);
@@ -757,6 +762,7 @@ function exitPickEditMode() {
 document.getElementById('btn-banner-done').addEventListener('click', () => {
   if (editMode) toggleEditMode();
   if (pickEditMode) exitPickEditMode();
+  if (soldOutMode) exitSoldOutMode();
 });
 
 // ── Menu des fonctions ────────────────────────────────────────────────────────
@@ -1164,6 +1170,12 @@ function setTestMode(on) {
   LS.set('pos_testmode', !!on);
   ticket = []; renderTicket();              // ne pas transférer un ticket d'un mode à l'autre
   reportTransactions = null; reportLoadedAt = 0;  // forcer le rechargement depuis le bon backend
+  // Les nouveautés (mixte, épuisé, attente) sont réservées au mode formation :
+  // on revient sur un état de caisse standard en changeant de mode.
+  if (payMethod === 'mixte') document.querySelector('.pay-btn[data-method="especes"]').click();
+  if (soldOutMode) exitSoldOutMode();
+  renderArticles();          // rafraîchit les badges « épuisé » (clé par mode)
+  updateHoldsBadge();
   renderTestBanner();
   updateTestMenuLabel();
   renderMemo();
@@ -1295,6 +1307,7 @@ function dragSaveOrder(grid) {
 // ══════════════════ TICKET ═════════════════════════════════════════════════════
 
 function addToTicket(art) {
+  if (isSoldOut(art.id)) { showToast(`⛔ ${art.name} est épuisé aujourd'hui.`); return; }
   const line = ticket.find(l => l.article.id === art.id);
   if (line) { line.qty++; }
   else { ticket.push({ article: art, qty: 1 }); }
@@ -1315,8 +1328,20 @@ function changeQty(artId, delta) {
   renderTicket();
 }
 
-function ticketTotal() {
+function ticketSubtotal() {
   return ticket.reduce((s, l) => s + l.article.price * (l.qty - (l.freeUnits || 0)), 0);
+}
+
+// Montant de la remise ticket (plafonnée au sous-total, jamais négative).
+function ticketDiscountAmount() {
+  if (!ticketDiscount) return 0;
+  const sub = ticketSubtotal();
+  const amt = ticketDiscount.type === 'pct' ? sub * ticketDiscount.value / 100 : ticketDiscount.value;
+  return Math.min(Math.max(amt, 0), sub);
+}
+
+function ticketTotal() {
+  return ticketSubtotal() - ticketDiscountAmount();
 }
 
 // Mode « offert » : quand actif, toucher un article du panier passe TOUTE la ligne à 0 € (et inversement).
@@ -1351,6 +1376,7 @@ document.getElementById('btn-free-pizza').addEventListener('click', toggleOfferM
 document.getElementById('btn-cheapest-pizza').addEventListener('click', offerCheapestPizza);
 
 function renderTicket() {
+  if (!ticket.length) ticketDiscount = null;   // panier vide = plus de remise
   const el = document.getElementById('ticket-lines');
   el.className = 'ticket-lines' + (offerMode ? ' offer-mode' : '');
   el.innerHTML = '';
@@ -1398,12 +1424,26 @@ function renderTicket() {
       btn.addEventListener('click', () => removeFromTicket(btn.dataset.id));
     });
   }
+  renderTicketDiscount();
   document.getElementById('ticket-total').textContent = fmtEur(ticketTotal());
   const vbtn = document.getElementById('btn-validate');
   vbtn.textContent = editingTxId
     ? `✔ Encaisser le complément (${fmtEur(ticketTotal())})`
     : '✔ Valider le paiement';
   updateCashChange();
+  updateSplitRow();
+}
+
+// Affiche/masque la ligne « Remise » au-dessus du total du ticket.
+function renderTicketDiscount() {
+  const row = document.getElementById('ticket-discount-row');
+  if (!row) return;
+  const amt = ticketDiscountAmount();
+  if (!ticketDiscount || amt <= 0) { row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  document.getElementById('ticket-discount-label').textContent =
+    ticketDiscount.type === 'pct' ? `Remise −${ticketDiscount.value}%` : 'Remise';
+  document.getElementById('ticket-discount-amt').textContent = '−' + fmtEur(amt);
 }
 
 function exitOfferMode() {
@@ -1426,9 +1466,23 @@ document.querySelectorAll('.pay-btn').forEach(btn => {
     payMethod = btn.dataset.method;
     document.getElementById('cash-change-row').style.display =
       payMethod === 'especes' ? 'flex' : 'none';
+    document.getElementById('split-row').style.display =
+      payMethod === 'mixte' ? 'flex' : 'none';
     updateCashChange();
+    updateSplitRow();
   });
 });
+
+// ── Paiement mixte : la part carte = total − espèces saisies ──────────────────
+function updateSplitRow() {
+  const el = document.getElementById('split-card');
+  if (payMethod !== 'mixte') { el.textContent = '—'; return; }
+  const cash = parseFloat(document.getElementById('split-cash').value) || 0;
+  const card = ticketTotal() - cash;
+  el.textContent = card >= 0 ? fmtEur(card) : '⚠ trop d\'espèces';
+  el.style.color = card >= 0 ? 'var(--olive)' : 'var(--danger)';
+}
+document.getElementById('split-cash').addEventListener('input', updateSplitRow);
 
 document.getElementById('cash-given').addEventListener('input', updateCashChange);
 
@@ -1450,6 +1504,14 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     const given = parseFloat(document.getElementById('cash-given').value) || 0;
     if (given > 0 && given < total) { showToast('Montant insuffisant.'); return; }
   }
+  // Paiement mixte : la part espèces doit rester entre 0 et le total.
+  let txSplit;
+  if (payMethod === 'mixte') {
+    const cash = parseFloat(document.getElementById('split-cash').value) || 0;
+    if (cash <= 0)    { showToast('Saisissez la part payée en espèces.'); return; }
+    if (cash >= total) { showToast('Part espèces ≥ total : choisissez plutôt « Espèces ».'); return; }
+    txSplit = { especes: Math.round(cash * 100) / 100, carte: Math.round((total - cash) * 100) / 100 };
+  }
   // Sépare unités payées / offertes → l'unité offerte est enregistrée à 0 €
   const lines = [];
   ticket.forEach(l => {
@@ -1458,6 +1520,14 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     if (paid > 0) lines.push({ ...l.article, qty: paid, subtotal: l.article.price * paid });
     if (free > 0) lines.push({ ...l.article, name: l.article.name + ' (offert)', price: 0, qty: free, subtotal: 0 });
   });
+  // Remise ticket : répartie au prorata sur les lignes payées, pour que les
+  // rapports (CA par catégorie, top articles…) restent cohérents avec le total.
+  const discAmt = ticketDiscountAmount();
+  const txDiscount = ticketDiscount ? { ...ticketDiscount, amount: Math.round(discAmt * 100) / 100 } : undefined;
+  if (discAmt > 0) {
+    const sub = ticketSubtotal();
+    lines.forEach(l => { if (l.subtotal > 0) l.subtotal = Math.round(l.subtotal * (1 - discAmt / sub) * 100) / 100; });
+  }
 
   // Cas « complément » : on encaisse seulement les nouveaux articles, liés à la vente d'origine.
   if (editingTxId) {
@@ -1469,6 +1539,8 @@ document.getElementById('btn-validate').addEventListener('click', () => {
       total,
       method:      payMethod,
       cancelled:   false,
+      split:       txSplit,
+      discount:    txDiscount,
       complementOf: editingTxId,
       clientId:    ticketClient ? ticketClient.id : undefined,
       clientName:  ticketClient ? ticketClient.name : undefined,
@@ -1482,7 +1554,7 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     ticket = [];
     exitOfferMode();
     setTicketClient(null);
-    document.getElementById('cash-given').value = '';
+    document.getElementById('cash-given').value = ''; document.getElementById('split-cash').value = '';
     renderEditBanner();
     renderTicket();
     showToast(`✔ Complément de ${fmtEur(total)} encaissé (${payMethod}).`);
@@ -1497,6 +1569,8 @@ document.getElementById('btn-validate').addEventListener('click', () => {
     total,
     method:    payMethod,
     cancelled: false,
+    split:     txSplit,
+    discount:  txDiscount,
     clientId:   ticketClient ? ticketClient.id : undefined,
     clientName: ticketClient ? ticketClient.name : undefined,
     employeeId: currentEmployeeId || undefined,
@@ -1507,7 +1581,7 @@ document.getElementById('btn-validate').addEventListener('click', () => {
   ticket = [];
   exitOfferMode();
   setTicketClient(null);
-  document.getElementById('cash-given').value = '';
+  document.getElementById('cash-given').value = ''; document.getElementById('split-cash').value = '';
   renderTicket();
   showToast(`✔ Paiement de ${fmtEur(total)} enregistré (${payMethod}).`);
 });
@@ -1967,7 +2041,7 @@ function renderMemo() {
   const active = txs.filter(t => !t.cancelled);
   const totalCA = active.reduce((s, t) => s + t.total, 0);
   const byMethod = { especes: 0, carte: 0 };
-  active.forEach(t => { byMethod[t.method] = (byMethod[t.method] || 0) + t.total; });
+  active.forEach(t => { const pp = payParts(t); byMethod.especes += pp.especes; byMethod.carte += pp.carte; });
   document.getElementById('memo-summary').innerHTML = `
     <div class="summary-chip"><strong>${active.length}</strong>tickets</div>
     <div class="summary-chip"><strong>${fmtEur(totalCA)}</strong>CA du jour</div>
@@ -1987,10 +2061,11 @@ function renderMemo() {
     const linesStr = (tx.clientName ? `👤 <strong>${tx.clientName}</strong> · ` : '')
       + (tx.employee ? `<span class="memo-emp">🧑‍🍳 ${escapeHtml(tx.employee)}</span> · ` : '')
       + (tx.complementOf ? '🔁 <em>complément</em> · ' : '')
+      + (tx.discount && tx.discount.amount ? `🏷️ <em>remise −${fmtEur(tx.discount.amount)}</em> · ` : '')
       + tx.lines.map(l => `${emojiFor(l)}${l.name} ×${l.qty}`).join(', ');
     const badge = tx.cancelled
       ? '<span class="badge-pay badge-annule">Annulé</span>'
-      : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte'}[tx.method] ?? tx.method}</span>`;
+      : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte', mixte:'💶+💳 Mixte'}[tx.method] ?? tx.method}</span>`;
     const tr = document.createElement('tr');
     tr.dataset.id = tx.id;
     tr.innerHTML = `
@@ -2000,6 +2075,7 @@ function renderMemo() {
       <td>${badge}</td>
       <td class="${cls}" style="font-weight:700">${fmtEur(tx.total)}</td>
       <td class="memo-actions">${tx.cancelled ? '' : `
+        <button class="btn-receipt-tx fx-new" data-id="${tx.id}" title="Afficher / imprimer le reçu client">🧾</button>
         <button class="btn-reopen-tx" data-id="${tx.id}" title="Rouvrir : ajouter des articles à cette vente">🔁 <span>Complément</span></button>
         <button class="btn-del-tx" data-id="${tx.id}" title="Confirmer l'annulation">🗑️</button>`}</td>
     `;
@@ -2018,6 +2094,9 @@ function renderMemo() {
   });
   tbody.querySelectorAll('.btn-reopen-tx').forEach(btn => {
     btn.addEventListener('click', () => reopenTransaction(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.btn-receipt-tx').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); openReceipt(btn.dataset.id); });
   });
 }
 
@@ -2893,7 +2972,7 @@ function renderTopArticles(txs, top) {
 
 function renderPaiements(txs) {
   const byMethod = { especes: 0, carte: 0 };
-  txs.forEach(t => { byMethod[t.method] = (byMethod[t.method] || 0) + t.total; });
+  txs.forEach(t => { const pp = payParts(t); byMethod.especes += pp.especes; byMethod.carte += pp.carte; });
   const total = Object.values(byMethod).reduce((s, v) => s + v, 0) || 1;
   const pct = m => Math.round((byMethod[m] / total) * 100);
   document.getElementById('report-paiements').innerHTML = `
@@ -3366,6 +3445,362 @@ window.addTransaction = function(tx) {
   syncToSheets();
 };
 
+// ══════════════════════════════════════════
+//  MODE FORMATION — NOUVELLES FONCTIONS
+// ══════════════════════════════════════════
+// Ces fonctions sont en rodage : leurs boutons (classe .fx-new) ne sont visibles
+// qu'en mode formation, et leurs données sont isolées par mode (clés *_test).
+// Pour les déployer en caisse réelle : retirer la règle CSS body:not(.testmode) .fx-new.
+
+// ── Répartition d'un paiement entre espèces et carte (gère le mode mixte) ─────
+function payParts(t) {
+  if (t.method === 'mixte' && t.split) return { especes: t.split.especes || 0, carte: t.split.carte || 0 };
+  return { especes: t.method === 'especes' ? t.total : 0, carte: t.method === 'carte' ? t.total : 0 };
+}
+
+// ── ⛔ Article épuisé aujourd'hui (rupture « 86 », remis à zéro chaque jour) ───
+let soldOutMode = false;
+
+function soldOutKey() { return isTestMode() ? 'pos_soldout_test' : 'pos_soldout'; }
+function getSoldOut() {
+  const s = LS.get(soldOutKey(), null);
+  return (s && s.date === todayISO()) ? s : { date: todayISO(), ids: [] };
+}
+function isSoldOut(id) { return getSoldOut().ids.includes(id); }
+function toggleSoldOut(id) {
+  const s = getSoldOut();
+  const nowOut = !s.ids.includes(id);
+  s.ids = nowOut ? [...s.ids, id] : s.ids.filter(x => x !== id);
+  LS.set(soldOutKey(), s);
+  if (nowOut && ticket.some(l => l.article.id === id)) {  // retire du panier en cours
+    ticket = ticket.filter(l => l.article.id !== id);
+    renderTicket();
+  }
+}
+function startSoldOutMode() {
+  soldOutMode = true;
+  showBanner('⛔ Touchez les articles épuisés aujourd\'hui (re-toucher pour annuler), puis « Terminer ».');
+  renderArticles();
+}
+function exitSoldOutMode() {
+  soldOutMode = false;
+  hideBanner();
+  renderArticles();
+}
+document.getElementById('menu-soldout').addEventListener('click', () => {
+  closeMenu(); goToCaisse();
+  if (editMode) toggleEditMode();
+  exitPickEditMode();
+  startSoldOutMode();
+});
+
+// ── 🏷️ Remise sur le ticket (% ou €) ─────────────────────────────────────────
+const discountModal = document.getElementById('modal-discount');
+const DISCOUNT_PRESETS = [5, 10, 15, 20];
+let discountType = 'pct';
+
+function openDiscountModal() {
+  if (!ticket.length) { showToast('Ajoutez d\'abord des articles au ticket.'); return; }
+  discountType = ticketDiscount ? ticketDiscount.type : 'pct';
+  document.getElementById('discount-value').value = ticketDiscount ? ticketDiscount.value : '';
+  document.getElementById('btn-discount-remove').style.display = ticketDiscount ? 'inline-flex' : 'none';
+  renderDiscountPresets();
+  syncDiscountType();
+  updateDiscountPreview();
+  discountModal.classList.add('open');
+}
+function closeDiscountModal() { discountModal.classList.remove('open'); }
+
+function renderDiscountPresets() {
+  const box = document.getElementById('discount-presets');
+  box.innerHTML = '';
+  DISCOUNT_PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'location-chip';
+    b.textContent = '−' + p + ' %';
+    b.addEventListener('click', () => {
+      discountType = 'pct';
+      document.getElementById('discount-value').value = p;
+      syncDiscountType();
+      updateDiscountPreview();
+    });
+    box.appendChild(b);
+  });
+}
+function syncDiscountType() {
+  document.querySelectorAll('.dtype-btn').forEach(b => b.classList.toggle('active', b.dataset.dtype === discountType));
+}
+function discountDraft() {
+  const v = parseFloat(document.getElementById('discount-value').value);
+  return (isNaN(v) || v <= 0) ? null : { type: discountType, value: v };
+}
+function updateDiscountPreview() {
+  const el = document.getElementById('discount-preview');
+  const d = discountDraft();
+  if (!d) { el.textContent = ''; return; }
+  const sub = ticketSubtotal();
+  const amt = Math.min(d.type === 'pct' ? sub * d.value / 100 : d.value, sub);
+  el.textContent = `Remise : −${fmtEur(amt)} → nouveau total ${fmtEur(sub - amt)}`;
+}
+document.querySelectorAll('.dtype-btn').forEach(b => b.addEventListener('click', () => {
+  discountType = b.dataset.dtype;
+  syncDiscountType();
+  updateDiscountPreview();
+}));
+document.getElementById('discount-value').addEventListener('input', updateDiscountPreview);
+document.getElementById('btn-discount-apply').addEventListener('click', () => {
+  const d = discountDraft();
+  if (!d) { showToast('Saisissez une valeur de remise.'); return; }
+  if (d.type === 'pct' && d.value > 100) { showToast('Un pourcentage ne peut pas dépasser 100.'); return; }
+  ticketDiscount = d;
+  closeDiscountModal();
+  renderTicket();
+  showToast(`🏷️ Remise appliquée : −${fmtEur(ticketDiscountAmount())}.`);
+});
+document.getElementById('btn-discount-remove').addEventListener('click', () => {
+  ticketDiscount = null;
+  closeDiscountModal();
+  renderTicket();
+  showToast('Remise retirée.');
+});
+document.getElementById('btn-discount-cancel').addEventListener('click', closeDiscountModal);
+discountModal.addEventListener('click', e => { if (e.target === discountModal) closeDiscountModal(); });
+document.getElementById('btn-ticket-discount').addEventListener('click', openDiscountModal);
+document.getElementById('btn-discount-clear').addEventListener('click', () => { ticketDiscount = null; renderTicket(); });
+
+// ── ⏸ Tickets en attente (mise de côté / rappel) ─────────────────────────────
+function holdsKey() { return isTestMode() ? 'pos_holds_test' : 'pos_holds'; }
+function getHolds() { return LS.get(holdsKey(), []); }
+function saveHolds(h) { LS.set(holdsKey(), h); updateHoldsBadge(); }
+function updateHoldsBadge() {
+  const el = document.getElementById('holds-label');
+  if (!el) return;
+  const n = getHolds().length;
+  el.textContent = n ? `Attente (${n})` : 'Attente';
+}
+
+const holdsModal = document.getElementById('modal-holds');
+function openHoldsModal() { renderHoldsModal(); holdsModal.classList.add('open'); }
+function closeHoldsModal() { holdsModal.classList.remove('open'); }
+
+function renderHoldsModal() {
+  const cur = document.getElementById('hold-current');
+  if (ticket.length && !editingTxId) {
+    cur.innerHTML = `
+      <p class="label">Ticket en cours — ${fmtEur(ticketTotal())}</p>
+      <div class="hold-put-row">
+        <input type="text" id="hold-name" placeholder="Nom du client / de la commande…">
+        <button class="btn-primary" id="btn-hold-put">⏸ Mettre en attente</button>
+      </div>`;
+    document.getElementById('btn-hold-put').addEventListener('click', putTicketOnHold);
+  } else {
+    cur.innerHTML = editingTxId
+      ? '<p class="empty-msg">Complément en cours — terminez-le avant de mettre en attente.</p>'
+      : '<p class="empty-msg">Aucun ticket en cours à mettre de côté.</p>';
+  }
+
+  const box = document.getElementById('holds-list');
+  const holds = getHolds();
+  if (!holds.length) { box.innerHTML = '<p class="empty-msg">Aucun ticket en attente.</p>'; return; }
+  box.innerHTML = '';
+  holds.slice().reverse().forEach(h => {
+    const total = h.lines.reduce((s, l) => s + l.article.price * (l.qty - (l.freeUnits || 0)), 0);
+    const row = document.createElement('div');
+    row.className = 'hold-row';
+    row.innerHTML = `
+      <div class="hold-info">
+        <strong>${escapeHtml(h.name || 'Sans nom')}</strong>
+        <small>${fmtTime(h.createdAt)} · ${h.lines.map(l => `${escapeHtml(l.article.name)} ×${l.qty}`).join(', ')}</small>
+      </div>
+      <span class="hold-total">${fmtEur(total)}</span>
+      <button class="btn-primary hold-resume" data-id="${h.id}">▶ Reprendre</button>
+      <button class="btn-danger hold-del" data-id="${h.id}" title="Supprimer">🗑</button>`;
+    box.appendChild(row);
+  });
+  box.querySelectorAll('.hold-resume').forEach(b => b.addEventListener('click', () => resumeHold(b.dataset.id)));
+  box.querySelectorAll('.hold-del').forEach(b => b.addEventListener('click', () => {
+    if (!confirm('Supprimer ce ticket en attente ?')) return;
+    saveHolds(getHolds().filter(x => x.id !== b.dataset.id));
+    renderHoldsModal();
+  }));
+}
+
+function putTicketOnHold() {
+  if (!ticket.length) return;
+  const name = (document.getElementById('hold-name').value || '').trim();
+  const hold = {
+    id: uid(),
+    name,
+    createdAt: new Date().toISOString(),
+    lines: ticket.map(l => ({ article: { ...l.article }, qty: l.qty, freeUnits: l.freeUnits || 0 })),
+    client: ticketClient ? { ...ticketClient } : null,
+    discount: ticketDiscount ? { ...ticketDiscount } : null,
+  };
+  saveHolds([...getHolds(), hold]);
+  ticket = [];
+  exitOfferMode();
+  setTicketClient(null);
+  renderTicket();
+  renderHoldsModal();
+  showToast(`⏸ Ticket « ${name || 'sans nom'} » mis en attente.`);
+}
+
+function resumeHold(id) {
+  if (ticket.length) { showToast('Videz ou mettez d\'abord en attente le ticket en cours.'); return; }
+  if (editingTxId)   { showToast('Terminez le complément en cours avant de reprendre un ticket.'); return; }
+  const h = getHolds().find(x => x.id === id);
+  if (!h) return;
+  ticket = h.lines.map(l => ({ article: l.article, qty: l.qty, freeUnits: l.freeUnits || 0 }));
+  ticketDiscount = h.discount || null;
+  setTicketClient(h.client);
+  saveHolds(getHolds().filter(x => x.id !== id));
+  renderTicket();
+  closeHoldsModal();
+  showToast(`▶ Ticket « ${h.name || 'sans nom'} » repris — encaissez quand vous êtes prêt.`);
+}
+
+document.getElementById('btn-holds').addEventListener('click', openHoldsModal);
+document.getElementById('btn-holds-close').addEventListener('click', closeHoldsModal);
+holdsModal.addEventListener('click', e => { if (e.target === holdsModal) closeHoldsModal(); });
+
+// ── 🧾 Clôture de caisse (Z du jour) ──────────────────────────────────────────
+function closuresKey() { return isTestMode() ? 'pos_closures_test' : 'pos_closures'; }
+function getClosures() { return LS.get(closuresKey(), []); }
+function saveClosures(c) { LS.set(closuresKey(), c); }
+
+const closureModal = document.getElementById('modal-closure');
+
+function closureDayStats(date) {
+  const txs = txsForDate(date).filter(t => !t.cancelled);
+  const byPay = { especes: 0, carte: 0 };
+  txs.forEach(t => { const pp = payParts(t); byPay.especes += pp.especes; byPay.carte += pp.carte; });
+  const remises = txs.reduce((s, t) => s + (t.discount && t.discount.amount ? t.discount.amount : 0), 0);
+  return { txs, total: txs.reduce((s, t) => s + t.total, 0), byPay, remises };
+}
+
+function openClosureModal() {
+  const date = todayISO();
+  document.getElementById('closure-date-label').textContent =
+    new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const st = closureDayStats(date);
+  document.getElementById('closure-summary').innerHTML = `
+    <div class="summary-chip"><strong>${st.txs.length}</strong>tickets</div>
+    <div class="summary-chip"><strong>${fmtEur(st.total)}</strong>CA du jour</div>
+    <div class="summary-chip"><strong>${fmtEur(st.byPay.especes)}</strong>Espèces attendues</div>
+    <div class="summary-chip"><strong>${fmtEur(st.byPay.carte)}</strong>Carte (TPE)</div>`;
+  const existing = getClosures().find(c => c.date === date);
+  const prev = getClosures().slice(-1)[0];
+  document.getElementById('closure-float').value   = existing ? existing.float : (prev ? prev.float : '');
+  document.getElementById('closure-counted').value = existing ? existing.counted : '';
+  document.getElementById('closure-notes').value   = existing ? (existing.notes || '') : '';
+  updateClosureGap();
+  renderClosureHistory();
+  closureModal.classList.add('open');
+}
+
+function updateClosureGap() {
+  const st  = closureDayStats(todayISO());
+  const flt = parseFloat(document.getElementById('closure-float').value) || 0;
+  const cnt = document.getElementById('closure-counted').value;
+  const el  = document.getElementById('closure-gap');
+  if (cnt === '') {
+    el.textContent = `Espèces théoriques en caisse : ${fmtEur(flt + st.byPay.especes)} (fond + ventes en espèces)`;
+    el.className = 'closure-gap';
+    return;
+  }
+  const gap = Math.round(((parseFloat(cnt) || 0) - (flt + st.byPay.especes)) * 100) / 100;
+  el.textContent = gap === 0 ? '✅ Caisse juste — aucun écart.'
+    : (gap > 0 ? `⚠️ Excédent de ${fmtEur(gap)} en caisse.` : `⚠️ Il manque ${fmtEur(-gap)} en caisse.`);
+  el.className = 'closure-gap ' + (gap === 0 ? 'ok' : 'ko');
+}
+['closure-float', 'closure-counted'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updateClosureGap));
+
+function buildClosure() {
+  const date = todayISO();
+  const st  = closureDayStats(date);
+  const flt = parseFloat(document.getElementById('closure-float').value) || 0;
+  const cnt = parseFloat(document.getElementById('closure-counted').value) || 0;
+  const r2  = n => Math.round(n * 100) / 100;
+  return {
+    date, savedAt: new Date().toISOString(),
+    employee: currentEmployeeName() || '',
+    location: currentLocation || '',
+    tickets: st.txs.length,
+    total: r2(st.total), especes: r2(st.byPay.especes), carte: r2(st.byPay.carte), remises: r2(st.remises),
+    float: flt, counted: cnt,
+    gap: r2(cnt - (flt + st.byPay.especes)),
+    notes: document.getElementById('closure-notes').value.trim(),
+  };
+}
+document.getElementById('btn-closure-save').addEventListener('click', () => {
+  const c = buildClosure();
+  const list = getClosures().filter(x => x.date !== c.date);
+  list.push(c);
+  list.sort((a, b) => a.date.localeCompare(b.date));
+  saveClosures(list);
+  renderClosureHistory();
+  showToast(`💾 Journée clôturée — écart : ${fmtEur(c.gap)}.`);
+});
+document.getElementById('btn-closure-export').addEventListener('click', () => {
+  const c = buildClosure();
+  downloadCSV(`cloture_${c.date}.csv`, [
+    ['Date', 'Employé', 'Emplacement', 'Tickets', 'CA total (€)', 'Espèces (€)', 'Carte (€)', 'Remises (€)',
+     'Fond de caisse (€)', 'Espèces comptées (€)', 'Écart (€)', 'Notes'],
+    [c.date, c.employee, c.location, c.tickets, c.total.toFixed(2), c.especes.toFixed(2), c.carte.toFixed(2),
+     c.remises.toFixed(2), c.float.toFixed(2), c.counted.toFixed(2), c.gap.toFixed(2), c.notes],
+  ]);
+});
+function renderClosureHistory() {
+  const el = document.getElementById('closure-history');
+  const list = getClosures().slice(-5).reverse();
+  el.innerHTML = list.length
+    ? '<p class="label" style="margin:.8rem 0 .3rem">Dernières clôtures</p>' + list.map(c => `
+      <div class="closure-hrow">
+        <span>${fmtDate(c.date)}</span>
+        <span>${c.tickets} tickets · ${fmtEur(c.total)}</span>
+        <span class="${c.gap === 0 ? 'ok' : 'ko'}">écart ${fmtEur(c.gap)}</span>
+      </div>`).join('')
+    : '';
+}
+document.getElementById('menu-closure').addEventListener('click', () => { closeMenu(); openClosureModal(); });
+document.getElementById('btn-closure-cancel').addEventListener('click', () => closureModal.classList.remove('open'));
+closureModal.addEventListener('click', e => { if (e.target === closureModal) closureModal.classList.remove('open'); });
+
+// ── 🧾 Reçu client (affichage + impression) ───────────────────────────────────
+const receiptModal = document.getElementById('modal-receipt');
+
+function openReceipt(txId) {
+  const tx = reportSource().find(t => t.id === txId);
+  if (!tx) { showToast('Vente introuvable.'); return; }
+  const payLabel = { especes: 'Espèces', carte: 'Carte bancaire', mixte: 'Mixte (espèces + carte)' }[tx.method] || tx.method;
+  document.getElementById('receipt-body').innerHTML = `
+    <div class="receipt-head">
+      <div class="receipt-logo">🍕</div>
+      <div class="receipt-title">La Casetta</div>
+      ${tx.location ? `<div class="receipt-sub">📍 ${escapeHtml(tx.location)}</div>` : ''}
+      <div class="receipt-sub">${fmtDate(tx.date.slice(0, 10))} · ${fmtTime(tx.date)}${isTestMode() ? ' · 🧪 FORMATION' : ''}</div>
+    </div>
+    <div class="receipt-lines">
+      ${tx.lines.map(l => `
+        <div class="receipt-line"><span>${escapeHtml(l.name)} ×${l.qty}</span><span>${fmtEur(l.subtotal)}</span></div>`).join('')}
+      ${tx.discount && tx.discount.amount ? `
+        <div class="receipt-line receipt-disc"><span>🏷️ Remise${tx.discount.type === 'pct' ? ` −${tx.discount.value}%` : ''}</span><span>déjà déduite</span></div>` : ''}
+    </div>
+    <div class="receipt-total"><span>TOTAL</span><span>${fmtEur(tx.total)}</span></div>
+    <div class="receipt-pay">Réglé en ${payLabel}${tx.split ? ` — espèces ${fmtEur(tx.split.especes)} · carte ${fmtEur(tx.split.carte)}` : ''}</div>
+    ${tx.clientName ? `<div class="receipt-sub" style="text-align:center">Client : ${escapeHtml(tx.clientName)}</div>` : ''}
+    <div class="receipt-thanks">Merci et à bientôt ! 🍕</div>`;
+  receiptModal.classList.add('open');
+}
+document.getElementById('btn-receipt-close').addEventListener('click', () => receiptModal.classList.remove('open'));
+receiptModal.addEventListener('click', e => { if (e.target === receiptModal) receiptModal.classList.remove('open'); });
+document.getElementById('btn-receipt-print').addEventListener('click', () => {
+  document.body.classList.add('printing-receipt');
+  window.print();
+  setTimeout(() => document.body.classList.remove('printing-receipt'), 500);
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 const _suppMerged = migrateCategories();   // renomme Suppléments->Supp, Pizzas grandes->Grande, etc.
 renderCategories();
@@ -3374,6 +3809,7 @@ renderTicketClient();
 renderEmployeeBtn();  // affiche l'employé en poste (Clémence Bailly par défaut)
 renderTestBanner();   // restaure la bannière si le mode formation était actif
 updateTestMenuLabel();
+updateHoldsBadge();   // compteur des tickets en attente (mode formation)
 renderMemo();
 renderReporting();
 syncToSheets();      // sync des ventes au démarrage
