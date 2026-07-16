@@ -212,7 +212,13 @@ function defaultArticles() {
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+// Date LOCALE (pas UTC) : avec toISOString(), entre minuit et 1h/2h du matin la
+// date affichée était celle de la veille (relevés, mémo, clôture, planning).
+function localDayOf(dateOrIso) {
+  const d = new Date(dateOrIso);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function todayISO() { return localDayOf(Date.now()); }
 function fmtTime(iso) {
   const d = new Date(iso);
   return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -328,7 +334,7 @@ function reopenTransaction(id) {
 function renderEditBanner() {
   const el = document.getElementById('edit-tx-banner');
   if (!editingTxId || !editingOriginal) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  const items = editingOriginal.lines.map(l => `${emojiFor(l)}${l.name} ×${l.qty}`).join(', ');
+  const items = editingOriginal.lines.map(l => `${emojiFor(l)}${escapeHtml(l.name)} ×${l.qty}`).join(', ');
   el.style.display = 'block';
   el.innerHTML = `
     <div class="etb-top"><b>🔁 Complément de vente</b><button id="btn-cancel-edit" class="etb-cancel">✕ Annuler</button></div>
@@ -414,7 +420,7 @@ function dashRange() {
   if (dashPeriod === 'today') return [end, end];
   if (dashPeriod === '7')     return [shift(end, -6), end];
   if (dashPeriod === '30')    return [shift(end, -29), end];
-  const days = reportSource().filter(t => !t.cancelled).map(t => t.date.slice(0, 10)).sort();
+  const days = reportSource().filter(t => !t.cancelled).map(t => localDayOf(t.date)).sort();
   return [days[0] || end, end];
 }
 
@@ -454,14 +460,14 @@ function renderDashboard() {
   const byDay = {}, byLoc = {}, byCat = {}, byHour = {}, byPay = { especes: 0, carte: 0 }, byArt = {};
   const A = (m, k, n) => { m[k] = (m[k] || 0) + n; };
   txs.forEach(t => {
-    const d = t.date.slice(0, 10);
+    const d = localDayOf(t.date);
     (byDay[d] = byDay[d] || { n: 0, ca: 0, art: 0 });
     byDay[d].n++; byDay[d].ca += t.total; byDay[d].art += t.lines.reduce((a, l) => a + l.qty, 0);
     A(byLoc, t.location || '(non défini)', t.total);
     A(byHour, String(new Date(t.date).getHours()).padStart(2, '0'), t.total);
     const pp = payParts(t);
     byPay.especes += pp.especes; byPay.carte += pp.carte;
-    t.lines.forEach(l => { A(byCat, l.category || '—', l.subtotal); if (/pizza/i.test(l.category || '')) A(byArt, l.name, l.subtotal); });
+    t.lines.forEach(l => { A(byCat, l.category || '—', l.subtotal); if (isPizzaCategory(l.category)) A(byArt, l.name, l.subtotal); });
   });
 
   // attache (chaque tx = 1 ticket)
@@ -494,13 +500,14 @@ function renderDashboard() {
   const hourItems = hourKeys.map(h => ({ label: h + 'h', value: byHour[h], vlabel: Math.round(byHour[h]) + '€',
     hot: byHour[h] === peakHourCA, title: fmtEur(byHour[h]) }));
 
+  const CAd = CA || 1;   // garde anti-NaN (journée où tout a été offert : CA = 0)
   const locRows = Object.entries(byLoc).sort((a, b) => b[1] - a[1]).map(([k, v], i) =>
-    ({ name: '📍 ' + k, right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CA * 100)}%`, value: v, lead: i === 0 }));
+    ({ name: '📍 ' + k, right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CAd * 100)}%`, value: v, lead: i === 0 }));
   const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v], i) =>
-    ({ name: k, right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CA * 100)}%`, value: v, lead: i === 0 }));
+    ({ name: k, right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CAd * 100)}%`, value: v, lead: i === 0 }));
   const topArt = Object.entries(byArt).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  const cartePct = Math.round(byPay.carte / CA * 100);
+  const cartePct = Math.round(byPay.carte / CAd * 100);
   const espPct = 100 - cartePct;
 
   body.innerHTML = `
@@ -562,6 +569,14 @@ const CAT_CANON = {
   'Pizzas petites': 'Petite'
 };
 function canonCat(c) { return CAT_CANON[c] || c; }
+
+// Détection des catégories « pizza ». Après les renommages (Pizzas grandes →
+// Grande, Pizzas petites → Petite), /pizza/i ne suffit plus : la fidélité, le
+// bouton 🍕 Fidélité et le top pizzas du tableau de bord en dépendent.
+function isPizzaCategory(c) {
+  const cat = (c || '').trim();
+  return /pizza/i.test(cat) || /^(grande|petite)s?$/i.test(cat);
+}
 
 // Libellés + couleur par catégorie (les valeurs réelles servent au filtrage).
 const CAT_LABELS = {
@@ -706,7 +721,7 @@ function renderArticles() {
       ${inactive ? '<span class="article-inactive-badge">Inactif</span>' : ''}
       ${soldOut ? '<span class="article-soldout-badge">⛔ Épuisé</span>' : ''}
       <span class="article-emoji">${art.emoji}</span>
-      <div class="article-name">${art.name}</div>
+      <div class="article-name">${escapeHtml(art.name)}</div>
       <div class="article-price">${fmtEur(art.price)}</div>
     `;
     card.addEventListener('click', () => {
@@ -1130,11 +1145,13 @@ document.getElementById('btn-temp-print').addEventListener('click', () => {
 document.getElementById('menu-edit-article').addEventListener('click', () => {
   closeMenu(); goToCaisse();
   if (editMode) toggleEditMode();
+  if (soldOutMode) exitSoldOutMode();   // un seul mode d'édition à la fois
   startPickEditMode();
 });
 document.getElementById('menu-reorder').addEventListener('click', () => {
   closeMenu(); goToCaisse();
   exitPickEditMode();
+  if (soldOutMode) exitSoldOutMode();
   if (!editMode) toggleEditMode();
 });
 document.getElementById('menu-categories').addEventListener('click', () => {
@@ -1364,7 +1381,7 @@ function toggleLineFree(artId) {
 // Offre une unité de la pizza la moins chère du panier (prix → 0 €).
 function offerCheapestPizza() {
   const eligible = ticket.filter(l =>
-    /pizza/i.test(l.article.category || '') && (l.qty - (l.freeUnits || 0)) > 0);
+    isPizzaCategory(l.article.category) && (l.qty - (l.freeUnits || 0)) > 0);
   if (!eligible.length) { showToast('Aucune pizza à offrir dans le panier.'); return; }
   const cheapest = eligible.reduce((a, b) => (b.article.price < a.article.price ? b : a));
   cheapest.freeUnits = (cheapest.freeUnits || 0) + 1;
@@ -1398,7 +1415,7 @@ function renderTicket() {
       div.className = 'ticket-line' + (free ? ' tl-free-line' : '');
       div.dataset.id = line.article.id;
       div.innerHTML = `
-        <span class="tl-name">${line.article.emoji} ${line.article.name}${freeNote}</span>
+        <span class="tl-name">${line.article.emoji} ${escapeHtml(line.article.name)}${freeNote}</span>
         <div class="tl-qty-controls">
           <button class="tl-qty-btn" data-id="${line.article.id}" data-delta="-1">−</button>
           <span class="tl-qty">${line.qty}</span>
@@ -1660,7 +1677,7 @@ function applyLoyaltyAfterSale(lines) {
   if (!ticketClient) return;
   const c = clientById(ticketClient.id);
   if (!c) return;
-  const isPizza = l => /pizza/i.test(l.category || '');
+  const isPizza = l => isPizzaCategory(l.category);
   const paidPizzas = lines.filter(l => isPizza(l) && l.price > 0).reduce((s, l) => s + l.qty, 0);
   const freePizzas = lines.filter(l => isPizza(l) && l.price === 0).reduce((s, l) => s + l.qty, 0);
   if (freePizzas > 0) {
@@ -1671,7 +1688,8 @@ function applyLoyaltyAfterSale(lines) {
   c.pizzaCount = pizzasOf(c) + paidPizzas;
   saveClients();
   if (rewardsAvailable(c) > before) {
-    showToast(`🎉 ${c.name} vient de gagner une pizza offerte (fidélité) !`);
+    // Décalé : le toast de confirmation du paiement (affiché juste après) l'écraserait.
+    setTimeout(() => showToast(`🎉 ${c.name} vient de gagner une pizza offerte (fidélité) !`), 3200);
   }
 }
 
@@ -1798,14 +1816,14 @@ function openClientDetail(id) {
       ${c.phone ? `📞 <b>${escapeHtml(c.phone)}</b><br>` : ''}
       ${c.notes ? `📝 ${escapeHtml(c.notes)}<br>` : ''}
       🍕 Fidélité : <b>${loyaltyProgress(c)}/${LOYALTY_THRESHOLD}</b> vers la prochaine offerte (${nbPizzas} pizza${nbPizzas > 1 ? 's' : ''} achetée${nbPizzas > 1 ? 's' : ''} au total)<br>
-      🧾 <b>${txs.length}</b> visite${txs.length > 1 ? 's' : ''} · 💰 <b>${fmtEur(total)}</b> · Dernière visite : <b>${txs[0] ? fmtDate(txs[0].date.slice(0, 10)) : '—'}</b>
+      🧾 <b>${txs.length}</b> visite${txs.length > 1 ? 's' : ''} · 💰 <b>${fmtEur(total)}</b> · Dernière visite : <b>${txs[0] ? fmtDate(localDayOf(txs[0].date)) : '—'}</b>
     </div>
     <div>
       <p class="label" style="margin-bottom:.3rem">Historique des achats</p>
       <div class="client-history">
         ${txs.slice(0, 20).map(t => `
           <div class="client-history-row">
-            <div class="chr-top"><span>${fmtDate(t.date.slice(0, 10))} · ${fmtTime(t.date)}</span><span>${fmtEur(t.total)}</span></div>
+            <div class="chr-top"><span>${fmtDate(localDayOf(t.date))} · ${fmtTime(t.date)}</span><span>${fmtEur(t.total)}</span></div>
             <div class="chr-items">${t.lines.map(l => `${l.name} ×${l.qty}`).join(', ')}</div>
           </div>`).join('') || '<p class="empty-msg">Aucun achat enregistré pour le moment</p>'}
       </div>
@@ -2021,7 +2039,7 @@ function attachSwipeToCancel(tr, id) {
 }
 
 function txsForDate(dateStr) {
-  return reportSource().filter(t => t.date.slice(0, 10) === dateStr);
+  return reportSource().filter(t => localDayOf(t.date) === dateStr);
 }
 
 // Emoji d'affichage : depuis la ligne, sinon retrouvé dans le catalogue par nom, sinon rien.
@@ -2058,11 +2076,11 @@ function renderMemo() {
   }
   txs.slice().reverse().forEach((tx, i) => {
     const cls = tx.cancelled ? 'cancelled' : '';
-    const linesStr = (tx.clientName ? `👤 <strong>${tx.clientName}</strong> · ` : '')
+    const linesStr = (tx.clientName ? `👤 <strong>${escapeHtml(tx.clientName)}</strong> · ` : '')
       + (tx.employee ? `<span class="memo-emp">🧑‍🍳 ${escapeHtml(tx.employee)}</span> · ` : '')
       + (tx.complementOf ? '🔁 <em>complément</em> · ' : '')
       + (tx.discount && tx.discount.amount ? `🏷️ <em>remise −${fmtEur(tx.discount.amount)}</em> · ` : '')
-      + tx.lines.map(l => `${emojiFor(l)}${l.name} ×${l.qty}`).join(', ');
+      + tx.lines.map(l => `${emojiFor(l)}${escapeHtml(l.name)} ×${l.qty}`).join(', ');
     const badge = tx.cancelled
       ? '<span class="badge-pay badge-annule">Annulé</span>'
       : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte', mixte:'💶+💳 Mixte'}[tx.method] ?? tx.method}</span>`;
@@ -2703,7 +2721,7 @@ function reportSource() {
 
 function txsForRange(start, end) {
   return reportSource().filter(t => {
-    const d = t.date.slice(0, 10);
+    const d = localDayOf(t.date);
     return !t.cancelled && d >= start && d <= end;
   });
 }
@@ -2760,7 +2778,7 @@ function loadFromSheets(opts) {
     reportLoadedAt = Date.now();
     // Ne cadre les dates du rapport sur tout l'historique qu'au tout premier chargement.
     if (firstLoad) {
-      const days = data.transactions.map(t => t.date.slice(0, 10)).sort();
+      const days = data.transactions.map(t => localDayOf(t.date)).sort();
       if (days.length) { reportStart.value = days[0]; reportEnd.value = days[days.length - 1]; }
     }
     const n = data.transactions.length, mot = 'vente' + (n > 1 ? 's' : '');
@@ -2937,7 +2955,7 @@ function renderFinancier(txs, start, end) {
   const avg   = txs.length ? total / txs.length : 0;
   const max   = txs.length ? Math.max(...txs.map(t => t.total)) : 0;
   const min   = txs.length ? Math.min(...txs.map(t => t.total)) : 0;
-  const days  = new Set(txs.map(t => t.date.slice(0, 10))).size || 1;
+  const days  = new Set(txs.map(t => localDayOf(t.date))).size || 1;
   document.getElementById('report-financier').innerHTML = `
     <div class="kpi-grid">
       <div class="kpi"><strong>${fmtEur(total)}</strong>CA total</div>
@@ -2951,12 +2969,17 @@ function renderFinancier(txs, start, end) {
 }
 
 function articleStats(txs) {
+  // Groupement par NOM : les lignes rechargées depuis Google Sheets n'ont pas
+  // d'id, et les id du catalogue diffèrent d'un iPad à l'autre — grouper par id
+  // fusionnait tous les articles Sheets dans une seule entrée « undefined ».
   const map = {};
   txs.forEach(tx => {
     tx.lines.forEach(l => {
-      if (!map[l.id]) map[l.id] = { name: l.name, emoji: l.emoji, qty: 0, revenue: 0 };
-      map[l.id].qty     += l.qty;
-      map[l.id].revenue += l.subtotal;
+      const key = l.name || '—';
+      if (!map[key]) map[key] = { name: l.name, emoji: l.emoji, qty: 0, revenue: 0 };
+      map[key].qty     += l.qty;
+      map[key].revenue += l.subtotal;
+      if (!map[key].emoji && l.emoji) map[key].emoji = l.emoji;
     });
   });
   return Object.values(map).sort((a, b) => b.qty - a.qty);
@@ -2972,7 +2995,7 @@ function renderTopArticles(txs, top) {
       <thead><tr><th>Article</th><th>Qté</th><th>CA</th></tr></thead>
       <tbody>${list.map(a => `
         <tr>
-          <td>${emojiFor(a)}${a.name}</td>
+          <td>${emojiFor(a)}${escapeHtml(a.name)}</td>
           <td>${a.qty}</td>
           <td>${fmtEur(a.revenue)}</td>
         </tr>`).join('')}
@@ -3003,7 +3026,7 @@ function renderPaiements(txs) {
           <tr>
             <td>${{especes:'💶 Espèces', carte:'💳 Carte'}[m]}</td>
             <td>${fmtEur(byMethod[m])}</td>
-            <td>${txs.filter(t => t.method === m).length}</td>
+            <td>${txs.filter(t => t.method === m || (t.method === 'mixte' && payParts(t)[m] > 0)).length}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -3014,7 +3037,7 @@ function renderPaiements(txs) {
 function renderCaJour(txs) {
   const byDay = {};
   txs.forEach(t => {
-    const d = t.date.slice(0, 10);
+    const d = localDayOf(t.date);
     byDay[d] = (byDay[d] || 0) + t.total;
   });
   const days = Object.keys(byDay).sort();
@@ -3025,7 +3048,7 @@ function renderCaJour(txs) {
         <tr>
           <td>${fmtDate(d)}</td>
           <td>${fmtEur(byDay[d])}</td>
-          <td>${txs.filter(t => t.date.slice(0,10) === d).length}</td>
+          <td>${txs.filter(t => localDayOf(t.date) === d).length}</td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -3038,7 +3061,7 @@ function renderArticlesParJour(txs) {
   if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
   const byDay = {};
   txs.forEach(t => {
-    const d = t.date.slice(0, 10);
+    const d = localDayOf(t.date);
     byDay[d] = (byDay[d] || 0) + t.lines.reduce((s, l) => s + l.qty, 0);
   });
   const days = Object.keys(byDay).sort().reverse();
@@ -3077,7 +3100,7 @@ function renderTopParCategorie(txs) {
     <table class="report-table">
       <thead><tr><th>Catégorie</th><th>Article star</th><th>Qté</th><th>CA</th></tr></thead>
       <tbody>${rows.map(r => `
-        <tr><td>${r.cat}</td><td style="font-weight:600">${emojiFor({name:r.name})}${r.name}</td>
+        <tr><td>${r.cat}</td><td style="font-weight:600">${emojiFor({name:r.name})}${escapeHtml(r.name)}</td>
         <td>${r.qty}</td><td>${fmtEur(r.ca)}</td></tr>`).join('')}
       </tbody>
     </table>`;
@@ -3129,8 +3152,8 @@ function renderTicketsReport(txs) {
       <thead><tr><th>Heure</th><th>Articles</th><th>Mode</th><th>Total</th></tr></thead>
       <tbody>${txs.slice().reverse().map(tx => `
         <tr>
-          <td>${fmtDate(tx.date.slice(0,10))}<br><small>${fmtTime(tx.date)}</small></td>
-          <td style="font-size:.75rem">${tx.lines.map(l=>`${l.name} ×${l.qty}`).join(', ')}</td>
+          <td>${fmtDate(localDayOf(tx.date))}<br><small>${fmtTime(tx.date)}</small></td>
+          <td style="font-size:.75rem">${tx.lines.map(l=>`${escapeHtml(l.name)} ×${l.qty}`).join(', ')}</td>
           <td>${tx.method}</td>
           <td style="font-weight:700">${fmtEur(tx.total)}</td>
         </tr>`).join('')}
@@ -3198,7 +3221,7 @@ function renderCaEmplacement(txs) {
     if (!byLoc[loc]) byLoc[loc] = { total: 0, n: 0, days: new Set() };
     byLoc[loc].total += tx.total;
     byLoc[loc].n++;
-    byLoc[loc].days.add(tx.date.slice(0, 10));
+    byLoc[loc].days.add(localDayOf(tx.date));
   });
 
   const rows = Object.entries(byLoc).sort((a, b) => b[1].total - a[1].total);
@@ -3259,14 +3282,14 @@ function exportReport(type) {
     }
     case 'ca-jour': {
       const byDay = {};
-      txs.forEach(t => { const d = t.date.slice(0,10); byDay[d] = (byDay[d]||0) + t.total; });
+      txs.forEach(t => { const d = localDayOf(t.date); byDay[d] = (byDay[d]||0) + t.total; });
       rows = [['Jour', 'CA (€)', 'Tickets'],
-        ...Object.entries(byDay).sort().map(([d, v]) => [d, v.toFixed(2), txs.filter(t=>t.date.slice(0,10)===d).length])];
+        ...Object.entries(byDay).sort().map(([d, v]) => [d, v.toFixed(2), txs.filter(t=>localDayOf(t.date)===d).length])];
       break;
     }
     case 'articles-jour': {
       const byDay = {};
-      txs.forEach(t => { const d = t.date.slice(0,10); byDay[d] = (byDay[d]||0) + t.lines.reduce((s,l)=>s+l.qty,0); });
+      txs.forEach(t => { const d = localDayOf(t.date); byDay[d] = (byDay[d]||0) + t.lines.reduce((s,l)=>s+l.qty,0); });
       const entries = Object.entries(byDay).sort();
       rows = [['Jour', 'Nb articles vendus'], ...entries.map(([d, v]) => [d, v]),
         ['TOTAL', entries.reduce((s, [,v]) => s + v, 0)]];
@@ -3285,7 +3308,7 @@ function exportReport(type) {
     }
     case 'tickets': {
       rows = [['Date', 'Heure', 'Emplacement', 'Articles', 'Paiement', 'Total (€)'],
-        ...txs.map(tx => [tx.date.slice(0,10), fmtTime(tx.date), tx.location || '',
+        ...txs.map(tx => [localDayOf(tx.date), fmtTime(tx.date), tx.location || '',
           tx.lines.map(l=>`${l.name} x${l.qty}`).join(' | '), tx.method, tx.total.toFixed(2)])];
       break;
     }
@@ -3304,7 +3327,7 @@ function exportReport(type) {
         const loc = tx.location || '(non défini)';
         if (!byLoc[loc]) byLoc[loc] = { total: 0, n: 0, days: new Set() };
         byLoc[loc].total += tx.total; byLoc[loc].n++;
-        byLoc[loc].days.add(tx.date.slice(0,10));
+        byLoc[loc].days.add(localDayOf(tx.date));
       });
       rows = [['Emplacement', 'CA (€)', 'Tickets', 'Jours', 'Moy/jour (€)'],
         ...Object.entries(byLoc).sort((a,b)=>b[1].total-a[1].total).map(([loc,v]) =>
@@ -3465,7 +3488,12 @@ window.addTransaction = function(tx) {
 
 // ── Répartition d'un paiement entre espèces et carte (gère le mode mixte) ─────
 function payParts(t) {
-  if (t.method === 'mixte' && t.split) return { especes: t.split.especes || 0, carte: t.split.carte || 0 };
+  if (t.method === 'mixte') {
+    if (t.split) return { especes: t.split.especes || 0, carte: t.split.carte || 0 };
+    // Vente mixte rechargée depuis Sheets (détail perdu) : tout en carte, pour
+    // ne pas gonfler les « espèces attendues » de la clôture de caisse.
+    return { especes: 0, carte: t.total };
+  }
   return { especes: t.method === 'especes' ? t.total : 0, carte: t.method === 'carte' ? t.total : 0 };
 }
 
@@ -3790,7 +3818,7 @@ function openReceipt(txId) {
       <div class="receipt-logo">🍕</div>
       <div class="receipt-title">La Casetta</div>
       ${tx.location ? `<div class="receipt-sub">📍 ${escapeHtml(tx.location)}</div>` : ''}
-      <div class="receipt-sub">${fmtDate(tx.date.slice(0, 10))} · ${fmtTime(tx.date)}${isTestMode() ? ' · 🧪 FORMATION' : ''}</div>
+      <div class="receipt-sub">${fmtDate(localDayOf(tx.date))} · ${fmtTime(tx.date)}${isTestMode() ? ' · 🧪 FORMATION' : ''}</div>
     </div>
     <div class="receipt-lines">
       ${tx.lines.map(l => `
