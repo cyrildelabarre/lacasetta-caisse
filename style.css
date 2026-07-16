@@ -850,16 +850,23 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 }
 .summary-chip strong { color: var(--terracotta); font-size: 1.1rem; display: block; }
 
+/* Zone défilante du tableau : sans elle, les ventes qui dépassent la hauteur
+   de l'écran étaient coupées (memo-layout est en overflow: hidden). Les
+   contrôles et les totaux du jour restent fixes au-dessus. */
+.memo-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: var(--white);
+}
 .memo-table {
   width: 100%;
   border-collapse: collapse;
   background: var(--white);
-  border-radius: var(--radius);
-  overflow: hidden;
   font-size: .86rem;
-  box-shadow: var(--shadow);
-  flex: 1;
-  display: table;
 }
 .memo-table thead th {
   background: var(--terracotta);
@@ -867,6 +874,9 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
   padding: .6rem .8rem;
   text-align: left;
   font-weight: 600;
+  position: sticky;   /* l'en-tête reste visible pendant le défilement */
+  top: 0;
+  z-index: 1;
 }
 .memo-table tbody tr { border-bottom: 1px solid var(--border); transition: background .18s ease; }
 .memo-table tbody tr:hover { background: var(--terracotta-bg); }
