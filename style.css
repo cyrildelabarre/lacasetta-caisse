@@ -139,6 +139,10 @@ header {
 .tab-btn.tab-menu-only { display: none; }
 .tab-btn.tab-menu-only.active { display: block; }
 
+/* Employé en poste : retiré de la barre du haut — visible et modifiable
+   via le menu ☰ → « 👤 Employés » (le bouton reste dans le DOM pour le JS) */
+#btn-employee { display: none; }
+
 .header-info { font-size: .85rem; opacity: .85; white-space: nowrap; display: flex; align-items: center; gap: .7rem; }
 
 .btn-lock {

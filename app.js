@@ -2271,6 +2271,17 @@ function setDefaultEmployee(id) {
 function renderEmployeeBtn() {
   const el = document.getElementById('employee-label');
   if (el) el.textContent = currentEmployeeName() || '—';
+  updateEmployeeMenuLabel();
+}
+
+// L'entrée « Employés » du menu ☰ affiche aussi l'employé en poste.
+function updateEmployeeMenuLabel() {
+  const el = document.getElementById('menu-employees');
+  if (!el) return;
+  const name = currentEmployeeName();
+  el.innerHTML = '👤 Employés<small>' + (name
+    ? 'En poste : <b>' + escapeHtml(name) + '</b>'
+    : 'En poste &amp; par défaut') + '</small>';
 }
 
 const employeeModal = document.getElementById('modal-employee');
