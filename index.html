@@ -654,7 +654,8 @@
   <script src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js');
+      // Chemin relatif : fonctionne aussi bien à la racine que sous /lacasetta-caisse/
+      navigator.serviceWorker.register('sw.js');
     }
   </script>
 </body>

@@ -1,13 +1,15 @@
-const CACHE = 'lacasetta-caisse-v5';
+const CACHE = 'lacasetta-caisse-v6';
+// Chemins RELATIFS : le site est servi sous /lacasetta-caisse/ (GitHub Pages),
+// des chemins absolus (/index.html) pointeraient hors du site et casseraient le SW.
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/apple-touch-icon.png',
+  './',
+  './index.html',
+  './style.css',
+  './app.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
 ];
 
 // Install : pré-cache des assets
@@ -27,6 +29,8 @@ self.addEventListener('activate', e => {
 
 // Fetch : NETWORK-FIRST pour nos propres fichiers (toujours la dernière version
 // quand il y a du réseau), avec repli sur le cache si hors-ligne.
+// cache: 'no-store' contourne le cache HTTP de Safari (max-age de GitHub Pages),
+// sinon une mise à jour peut mettre ~10 min à apparaître sur l'iPad.
 // Les requêtes POST et externes (Google Sheets) passent directement au réseau.
 self.addEventListener('fetch', e => {
   const req = e.request;
@@ -34,12 +38,12 @@ self.addEventListener('fetch', e => {
   if (new URL(req.url).origin !== self.location.origin) return;
 
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-store' })
       .then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(cache => cache.put(req, copy));
         return res;
       })
-      .catch(() => caches.match(req).then(c => c || caches.match('/index.html')))
+      .catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
   );
 });
