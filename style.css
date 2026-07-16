@@ -134,10 +134,9 @@ header {
 }
 .tab-btn:hover { background: rgba(255,255,255,.25); color: var(--white); }
 .tab-btn.active { background: var(--white); color: var(--terracotta); font-weight: 700; }
-/* Onglets accessibles uniquement via le menu ☰ : masqués dans la barre,
-   sauf quand ils sont actifs (on voit alors où l'on se trouve) */
-.tab-btn.tab-menu-only { display: none; }
-.tab-btn.tab-menu-only.active { display: block; }
+/* Onglets accessibles uniquement via le menu ☰ : jamais affichés dans la
+   barre du haut (le bouton reste dans le DOM pour la navigation JS) */
+.tab-btn.tab-menu-only { display: none !important; }
 
 /* Employé en poste : retiré de la barre du haut — visible et modifiable
    via le menu ☰ → « 👤 Employés » (le bouton reste dans le DOM pour le JS) */
