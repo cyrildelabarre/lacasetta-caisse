@@ -28,6 +28,20 @@ const COL = {
 
 const JOURS = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']; // getDay(): 0=Dim
 
+// Fusion des catégories renommées (ancien libellé -> nouveau). Les ventes
+// historiques de la feuille portent encore les anciens noms (« Pizzas grandes »,
+// « Pizzas petites », « Suppléments ») : sans fusion, chaque catégorie apparaît
+// en double dans les synthèses. Clés en minuscules (comparaison insensible à la casse).
+const CAT_CANON = {
+  'suppléments': 'Supp', 'supplements': 'Supp',
+  'pizzas grandes': 'Grande',
+  'pizzas petites': 'Petite'
+};
+function normCat(c) {
+  const k = String(c || '').trim();
+  return CAT_CANON[k.toLowerCase()] || k;
+}
+
 // ════════════════════════════════════════════
 //  SPREADSHEET / FEUILLE TRANSACTIONS
 // ════════════════════════════════════════════
@@ -114,7 +128,7 @@ function computeStats(rows) {
 
   rows.forEach(r => {
     lines.push({
-      art: r[COL.article], cat: r[COL.cat],
+      art: r[COL.article], cat: normCat(r[COL.cat]),
       qty: Number(r[COL.qty])||0, sub: Number(r[COL.sub])||0,
       hour: Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH'),
       dKey: dayKey(r[COL.date]), date: asDate(r[COL.date])
@@ -133,7 +147,7 @@ function computeStats(rows) {
         cats:  {}
       };
     }
-    tickets[id].cats[String(r[COL.cat] || '')] = true; // catégories présentes dans la vente
+    tickets[id].cats[normCat(r[COL.cat])] = true; // catégories présentes dans la vente
     tickets[id].nbArt += Number(r[COL.qty]) || 0;
   });
 
@@ -1136,7 +1150,7 @@ function getAllTransactions() {
       };
     }
     map[id].lines.push({
-      name: r[COL.article], category: r[COL.cat],
+      name: r[COL.article], category: normCat(r[COL.cat]),
       price: Number(r[COL.pu]) || 0, qty: Number(r[COL.qty]) || 0, subtotal: Number(r[COL.sub]) || 0
     });
   });
@@ -1152,8 +1166,25 @@ function rebuildAll() {
   const ss = getOrCreateSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return;
+  fixOldCategories(sheet);
   numberTickets(sheet);
   createAllSheets(ss);
+}
+
+// Réécrit la colonne Catégorie des lignes historiques (Pizzas grandes → Grande,
+// Pizzas petites → Petite, Suppléments → Supp) pour que la feuille Transactions
+// n'ait plus qu'un seul libellé par catégorie. Idempotent : ne réécrit que si besoin.
+function fixOldCategories(sheet) {
+  const lr = sheet.getLastRow();
+  if (lr < 2) return;
+  const rng  = sheet.getRange(2, COL.cat + 1, lr - 1, 1);
+  const vals = rng.getValues();
+  let changed = false;
+  vals.forEach(v => {
+    const n = normCat(v[0]);
+    if (v[0] !== '' && n !== v[0]) { v[0] = n; changed = true; }
+  });
+  if (changed) rng.setValues(vals);
 }
 
 // À EXÉCUTER UNE FOIS : recalcule tous les onglets à CHAQUE OUVERTURE du Google Sheet.
