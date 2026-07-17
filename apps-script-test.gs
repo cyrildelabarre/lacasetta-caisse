@@ -201,8 +201,10 @@ function insightLines(tk, ln) {
   const ticketMoy = nbTx ? totalCA/nbTx : 0;
   const topArts = sortDescByVal(artCA), topHeure = sortDescByVal(heureCA);
   const topJour = sortDescByVal(jourCA), topCat   = sortDescByVal(catCA);
-  // « À surveiller » : on exclut les articles offerts (0 €), sinon ils trustent le bas du classement
-  const flopArts = topArts.filter(e => !/\(offert/i.test(e[0]));
+  // « À surveiller » : on exclut les articles offerts (0 €), sinon ils trustent le
+  // bas du classement, ainsi que le top 3, sinon un même article pouvait être cité
+  // à la fois en top et en moins vendu.
+  const flopArts = topArts.slice(3).filter(e => !/\(offert/i.test(e[0]));
 
   const f   = eurStr;
   const pct = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
@@ -216,9 +218,11 @@ function insightLines(tk, ln) {
     `✅  Top 3 : ${g(topArts,2)} → ${f(gv(topArts,2))}`,
     `👉  Astuce : mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`,
     '━━━  📉  ARTICLES À SURVEILLER  ━━━',
-    `⚠️  Moins vendu : ${g(flopArts,flopArts.length-1)} → ${f(gv(flopArts,flopArts.length-1))} (${artQty[g(flopArts,flopArts.length-1)]||0} vendus)`,
-    `⚠️  2e moins vendu : ${g(flopArts,flopArts.length-2)} → ${f(gv(flopArts,flopArts.length-2))}`,
-    `👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`,
+    ...(flopArts.length ? [
+      `⚠️  Moins vendu : ${g(flopArts,flopArts.length-1)} → ${f(gv(flopArts,flopArts.length-1))} (${artQty[g(flopArts,flopArts.length-1)]||0} vendus)`,
+    ].concat(flopArts.length > 1 ? [`⚠️  2e moins vendu : ${g(flopArts,flopArts.length-2)} → ${f(gv(flopArts,flopArts.length-2))}`] : [])
+     .concat([`👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`])
+    : ['✅  Rien à signaler : trop peu d\'articles distincts vendus sur la période.']),
     '━━━  🍕  CATÉGORIES  ━━━',
     ...topCat.map(([cat,ca],i) => `${i===0?'🥇':i===1?'🥈':'🥉'}  ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
     `👉  Astuce : les suppléments représentent ${pct(catCA['Suppléments']||0, totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
@@ -632,7 +636,8 @@ function buildAndSendReport(tk, ln, opts) {
   });
   const topAll  = sortDescByVal(artCA);
   const topArts = topAll.slice(0,5);
-  const flopArts = topAll.filter(e => !/\(offert/i.test(e[0])).slice(-5).reverse();
+  // Le flop exclut le top 5 (sinon un même article pouvait figurer dans les deux tableaux).
+  const flopArts = topAll.slice(5).filter(e => !/\(offert/i.test(e[0])).slice(-5).reverse();
   const locRows = sortDescByVal(byLoc);
   const dayRows = Object.keys(byDay).sort().map(k=>byDay[k]);
 

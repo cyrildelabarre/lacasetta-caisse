@@ -2895,8 +2895,9 @@ function buildInsights(txs) {
   const ticketMoy = nbTx ? totalCA/nbTx : 0;
   const sortD = o => Object.entries(o).sort((a,b)=>b[1]-a[1]);
   const topArts=sortD(artCA), topHeure=sortD(heureCA), topJour=sortD(jourCA), topCat=sortD(catCA);
-  // « À surveiller » : on exclut les articles offerts (0 €)
-  const flopArts = topArts.filter(e => !/\(offert/i.test(e[0]));
+  // « À surveiller » : on exclut les articles offerts (0 €) ainsi que le top 3,
+  // sinon un même article pouvait être cité à la fois en top et en moins vendu.
+  const flopArts = topArts.slice(3).filter(e => !/\(offert/i.test(e[0]));
 
   const f   = fmtEur;
   const pct = (a,b)=> b ? Math.round(a/b*100)+'%' : '—';
@@ -2910,9 +2911,11 @@ function buildInsights(txs) {
     `✅ Top 3 : ${g(topArts,2)} → ${f(gv(topArts,2))}`,
     `👉 Mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`,
     '━━━ 📉 Articles à surveiller',
-    `⚠️ Moins vendu : ${g(flopArts,flopArts.length-1)} → ${f(gv(flopArts,flopArts.length-1))} (${artQty[g(flopArts,flopArts.length-1)]||0} vendus)`,
-    `⚠️ 2e moins vendu : ${g(flopArts,flopArts.length-2)} → ${f(gv(flopArts,flopArts.length-2))}`,
-    `👉 Envisage de les retirer ou de les proposer en "offre du jour".`,
+    ...(flopArts.length ? [
+      `⚠️ Moins vendu : ${g(flopArts,flopArts.length-1)} → ${f(gv(flopArts,flopArts.length-1))} (${artQty[g(flopArts,flopArts.length-1)]||0} vendus)`,
+      ...(flopArts.length > 1 ? [`⚠️ 2e moins vendu : ${g(flopArts,flopArts.length-2)} → ${f(gv(flopArts,flopArts.length-2))}`] : []),
+      `👉 Envisage de les retirer ou de les proposer en "offre du jour".`,
+    ] : ['✅ Rien à signaler : trop peu d\'articles distincts vendus sur la période.']),
     '━━━ 🍕 Catégories',
     ...topCat.map(([cat,ca],i)=>`${i===0?'🥇':i===1?'🥈':'🥉'} ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
     `👉 Les suppléments = ${pct((catCA['Supp']||0)+(catCA['Suppléments']||0),totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
@@ -2987,9 +2990,12 @@ function articleStats(txs) {
 
 function renderTopArticles(txs, top) {
   const stats = articleStats(txs);
-  const list  = top ? stats.slice(0, 8) : stats.slice(-8).reverse();
+  // Le flop exclut les articles déjà présents dans le top 8 : avec moins de
+  // 16 articles distincts, le même article apparaissait dans les deux listes.
+  const list  = top ? stats.slice(0, 8) : stats.slice(Math.max(8, stats.length - 8)).reverse();
   const elId  = top ? 'report-top-articles' : 'report-bottom-articles';
   if (!stats.length) { document.getElementById(elId).innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+  if (!list.length)  { document.getElementById(elId).innerHTML = '<p class="empty-msg">Tous les articles vendus figurent déjà dans le top.</p>'; return; }
   document.getElementById(elId).innerHTML = `
     <table class="report-table">
       <thead><tr><th>Article</th><th>Qté</th><th>CA</th></tr></thead>
@@ -3269,7 +3275,8 @@ function exportReport(type) {
     case 'top-articles':
     case 'bottom-articles': {
       const stats = articleStats(txs);
-      const list  = type === 'top-articles' ? stats.slice(0, 8) : stats.slice(-8).reverse();
+      // Même règle que l'affichage : le flop exclut les articles du top 8.
+      const list  = type === 'top-articles' ? stats.slice(0, 8) : stats.slice(Math.max(8, stats.length - 8)).reverse();
       rows = [['Article', 'Quantité', 'CA (€)'], ...list.map(a => [a.name, a.qty, a.revenue.toFixed(2)])];
       break;
     }
