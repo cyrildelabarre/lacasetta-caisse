@@ -231,6 +231,11 @@ function fmtDate(iso) {
 function fmtEur(n) {
   return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 }
+// Champs monétaires : accepte la virgule française (« 12,50 ») comme le point.
+function parseMoney(v) {
+  const n = parseFloat(String(v ?? '').trim().replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
 
 // ── Transactions store ───────────────────────────────────────────────────────
 function getTransactions() { return LS.get(txKey(), []); }
@@ -913,6 +918,14 @@ function encById(id)  { return getEnclosures().find(e => e.id === id); }
 function encTemps(id) { const e = encById(id); return TEMP_RANGES[(e && e.type) || 'frigo']; }
 function encIcon(type){ return type === 'congelateur' ? '❄️' : '🧊'; }
 
+// Initiales de l'employé courant (ex. « Clémence Bailly » → CB) pour préremplir
+// la ligne Initiales du relevé, au lieu d'un « CB » codé en dur.
+function currentEmployeeInitials() {
+  const n = currentEmployeeName() || '';
+  const ini = n.split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('').slice(0, 3);
+  return ini || 'CB';
+}
+
 let tempEnc      = (getEnclosures()[0] || {}).id || 'frigo_cuisine';
 let tempMonth    = todayISO().slice(0, 7); // AAAA-MM
 let tempEditMode = false;                  // mode « modifier les enceintes » (affiche les ×)
@@ -968,7 +981,7 @@ function loadTempInto() {
   renderTempTabs();
   const e = encById(tempEnc);
   document.getElementById('temp-title').textContent = '🌡️ ' + (e ? e.name : 'Relevés de température');
-  document.getElementById('temp-initials').value   = tempRec.initials || 'CB'; // CB par défaut
+  document.getElementById('temp-initials').value   = tempRec.initials || currentEmployeeInitials();
   document.getElementById('temp-corrective').value = tempRec.corrective || '';
   renderTempGrid();
 }
@@ -1037,7 +1050,10 @@ function pullTemperatures() {
 function renderTempGrid() {
   const table = document.getElementById('temp-grid');
   const temps = encTemps(tempEnc);
-  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  // Nombre réel de jours du mois affiché (plus de 30/31 février fantômes)
+  const [ty, tm] = tempMonth.split('-').map(Number);
+  const nbDays = new Date(ty, tm, 0).getDate();
+  const days = Array.from({ length: nbDays }, (_, i) => i + 1);
   let html = '<thead><tr><th class="temp-corner">T°C \\ Jour</th>' +
     days.map(d => `<th>${d}</th>`).join('') + '</tr></thead><tbody>';
   temps.forEach(t => {
@@ -1065,7 +1081,7 @@ function renderTempGrid() {
   table.querySelectorAll('.temp-init-cell').forEach(cell => {
     cell.addEventListener('click', () => {
       const d = +cell.dataset.day;
-      const ini = (document.getElementById('temp-initials').value || 'CB').trim();
+      const ini = (document.getElementById('temp-initials').value || currentEmployeeInitials()).trim();
       if (tempRec.initialsByDay[d]) delete tempRec.initialsByDay[d];
       else tempRec.initialsByDay[d] = ini;
       persistTemp();
@@ -1100,15 +1116,22 @@ function pushAllTemperatures() {
 }
 
 // Échange complet à la demande : envoie ET récupère ventes, catalogue, relevés.
-function syncAll() {
+async function syncAll() {
   showToast('🔄 Synchronisation en cours…');
-  syncToSheets();                         // envoie les ventes en attente
   if (cataloguePushPending) pushCatalogue();
   pullCatalogue();                        // récupère le catalogue partagé
   pushAllTemperatures();                  // envoie tous les relevés locaux
   pullTemperatures();                     // récupère les relevés
   loadFromSheets();                       // rafraîchit l'historique des ventes (reporting)
-  setTimeout(() => showToast('✅ Données synchronisées.'), 3000);
+  flushPendingCancels();                  // annulations en attente
+  flushDirtyBackups();                    // clients / clôtures en attente
+  // Envoi des ventes : on attend le résultat RÉEL au lieu d'afficher un
+  // « ✅ » optimiste après 3 secondes quel que soit le sort des requêtes.
+  await syncToSheets();
+  const pendingTx      = getTransactions().filter(t => !t.synced).length;
+  const pendingCancels = getPendingCancels().length;
+  if (!pendingTx && !pendingCancels) showToast('✅ Ventes synchronisées avec Google Sheets.');
+  else showToast(`⚠️ Synchronisation incomplète : ${pendingTx + pendingCancels} élément(s) en attente — vérifiez le réseau.`);
 }
 document.getElementById('menu-sync').addEventListener('click', () => { closeMenu(); goToCaisse(); syncAll(); });
 
@@ -1198,12 +1221,12 @@ function deleteEnclosure(id) {
 }
 document.getElementById('btn-temp-save').addEventListener('click', () => {
   // Tamponne les initiales du champ dans la colonne du jour courant.
-  const ini = (document.getElementById('temp-initials').value || 'CB').trim();
+  const ini = (document.getElementById('temp-initials').value || currentEmployeeInitials()).trim();
   tempRec.initials = ini;
   const day = new Date().getDate();  // jour du mois (aujourd'hui)
   tempRec.initialsByDay[day] = ini;
-  // Complète « CB » sur chaque jour relevé (température saisie) sans initiales.
-  Object.keys(tempRec.temps).forEach(d => { if (!tempRec.initialsByDay[d]) tempRec.initialsByDay[d] = 'CB'; });
+  // Complète les initiales sur chaque jour relevé (température saisie) sans initiales.
+  Object.keys(tempRec.temps).forEach(d => { if (!tempRec.initialsByDay[d]) tempRec.initialsByDay[d] = ini; });
   persistTemp();
   pushTemperatures();   // envoi immédiat vers Google Sheets
   renderTempGrid();
@@ -1572,7 +1595,7 @@ document.querySelectorAll('.pay-btn').forEach(btn => {
 function updateSplitRow() {
   const el = document.getElementById('split-card');
   if (payMethod !== 'mixte') { el.textContent = '—'; return; }
-  const cash = parseFloat(document.getElementById('split-cash').value) || 0;
+  const cash = parseMoney(document.getElementById('split-cash').value);
   const card = ticketTotal() - cash;
   el.textContent = card >= 0 ? fmtEur(card) : '⚠ trop d\'espèces';
   el.style.color = card >= 0 ? 'var(--olive)' : 'var(--danger)';
@@ -1582,7 +1605,7 @@ document.getElementById('split-cash').addEventListener('input', updateSplitRow);
 document.getElementById('cash-given').addEventListener('input', updateCashChange);
 
 function updateCashChange() {
-  const given = parseFloat(document.getElementById('cash-given').value) || 0;
+  const given = parseMoney(document.getElementById('cash-given').value);
   const total = ticketTotal();
   const changeEl = document.getElementById('cash-change');
   if (payMethod !== 'especes' || !given) { changeEl.textContent = '—'; return; }
@@ -1596,13 +1619,13 @@ document.getElementById('btn-validate').addEventListener('click', () => {
   if (!ticket.length) { showToast('Aucun article dans le ticket.'); return; }
   const total = ticketTotal();
   if (payMethod === 'especes') {
-    const given = parseFloat(document.getElementById('cash-given').value) || 0;
+    const given = parseMoney(document.getElementById('cash-given').value);
     if (given > 0 && given < total) { showToast('Montant insuffisant.'); return; }
   }
   // Paiement mixte : la part espèces doit rester entre 0 et le total.
   let txSplit;
   if (payMethod === 'mixte') {
-    const cash = parseFloat(document.getElementById('split-cash').value) || 0;
+    const cash = parseMoney(document.getElementById('split-cash').value);
     if (cash <= 0)    { showToast('Saisissez la part payée en espèces.'); return; }
     if (cash >= total) { showToast('Part espèces ≥ total : choisissez plutôt « Espèces ».'); return; }
     txSplit = { especes: Math.round(cash * 100) / 100, carte: Math.round((total - cash) * 100) / 100 };
@@ -1688,7 +1711,7 @@ document.getElementById('btn-validate').addEventListener('click', () => {
 
 const LOYALTY_THRESHOLD = 10;
 let clients = LS.get('pos_clients', []);
-function saveClients() { LS.set('pos_clients', clients); }
+function saveClients() { LS.set('pos_clients', clients); pushClients(); }
 function clientById(id) { return clients.find(c => c.id === id); }
 
 function pizzasOf(c)         { return c.pizzaCount || 0; }
@@ -1766,8 +1789,9 @@ function applyLoyaltyAfterSale(lines) {
   c.pizzaCount = pizzasOf(c) + paidPizzas;
   saveClients();
   if (rewardsAvailable(c) > before) {
-    // Décalé : le toast de confirmation du paiement (affiché juste après) l'écraserait.
-    setTimeout(() => showToast(`🎉 ${c.name} vient de gagner une pizza offerte (fidélité) !`), 3200);
+    // Différé d'un tick : le toast « Paiement enregistré » (émis juste après dans
+    // le même handler) entre ainsi en premier dans la file d'affichage.
+    setTimeout(() => showToast(`🎉 ${c.name} vient de gagner une pizza offerte (fidélité) !`), 0);
   }
 }
 
@@ -2076,7 +2100,7 @@ document.getElementById('btn-modal-save').addEventListener('click', () => {
   const name     = document.getElementById('art-name').value.trim();
   const selCat   = document.getElementById('art-category').value;
   const category = selCat === NEW_CAT ? document.getElementById('art-category-new').value.trim() : selCat;
-  const price    = parseFloat(document.getElementById('art-price').value);
+  const price    = parseFloat(document.getElementById('art-price').value.replace(',', '.'));
   const emoji    = document.getElementById('art-emoji').value.trim() || '🍕';
   const active   = document.getElementById('art-active').checked;
   if (!name || !category || isNaN(price)) { showToast('Remplissez tous les champs.'); return; }
@@ -3487,13 +3511,24 @@ function downloadCSV(filename, rows) {
 // ── Toast ─────────────────────────────────────────────────────────────────────
 document.addEventListener('pos:toast', e => showToast(e.detail));
 
-let toastTimer;
+// File de toasts : les messages s'affichent l'un après l'autre au lieu de
+// s'écraser (paiement + fidélité + sync peuvent arriver en rafale).
+let toastQueue = [], toastActive = false;
 function showToast(msg) {
+  if (toastQueue[toastQueue.length - 1] === msg) return;   // doublon consécutif
+  toastQueue.push(msg);
+  if (!toastActive) nextToast();
+}
+function nextToast() {
   const el = document.getElementById('toast');
-  el.textContent = msg;
+  if (!toastQueue.length) { toastActive = false; return; }
+  toastActive = true;
+  el.textContent = toastQueue.shift();
   el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(nextToast, 250);   // petite respiration entre deux messages
+  }, 2600);
 }
 
 // ══════════════════════════════════════════
@@ -3567,14 +3602,17 @@ window.addEventListener('online', () => {
   if (cataloguePushPending) pushCatalogue();
   pullCatalogue();
   flushPendingCancels();
+  flushDirtyBackups();
 });
 
 // Filet de sécurité : relance périodique tant qu'il reste des ventes, un
-// catalogue ou des annulations en attente. (« online » est peu fiable sur iOS Safari.)
+// catalogue, des annulations ou des sauvegardes en attente. (« online » est peu
+// fiable sur iOS Safari.)
 setInterval(() => {
   if (getTransactions().some(t => !t.synced)) syncToSheets();
   if (cataloguePushPending) pushCatalogue();
   if (getPendingCancels().length) flushPendingCancels();
+  flushDirtyBackups();
 }, 15000);
 
 // Annulations restées en attente d'une session précédente (app fermée hors ligne)
@@ -3678,7 +3716,7 @@ function syncDiscountType() {
   document.querySelectorAll('.dtype-btn').forEach(b => b.classList.toggle('active', b.dataset.dtype === discountType));
 }
 function discountDraft() {
-  const v = parseFloat(document.getElementById('discount-value').value);
+  const v = parseFloat(document.getElementById('discount-value').value.replace(',', '.'));
   return (isNaN(v) || v <= 0) ? null : { type: discountType, value: v };
 }
 function updateDiscountPreview() {
@@ -3813,7 +3851,7 @@ holdsModal.addEventListener('click', e => { if (e.target === holdsModal) closeHo
 // ── 🧾 Clôture de caisse (Z du jour) ──────────────────────────────────────────
 function closuresKey() { return isTestMode() ? 'pos_closures_test' : 'pos_closures'; }
 function getClosures() { return LS.get(closuresKey(), []); }
-function saveClosures(c) { LS.set(closuresKey(), c); }
+function saveClosures(c) { LS.set(closuresKey(), c); pushClosures(); }
 
 const closureModal = document.getElementById('modal-closure');
 
@@ -3847,7 +3885,7 @@ function openClosureModal() {
 
 function updateClosureGap() {
   const st  = closureDayStats(todayISO());
-  const flt = parseFloat(document.getElementById('closure-float').value) || 0;
+  const flt = parseMoney(document.getElementById('closure-float').value);
   const cnt = document.getElementById('closure-counted').value;
   const el  = document.getElementById('closure-gap');
   if (cnt === '') {
@@ -3855,7 +3893,7 @@ function updateClosureGap() {
     el.className = 'closure-gap';
     return;
   }
-  const gap = Math.round(((parseFloat(cnt) || 0) - (flt + st.byPay.especes)) * 100) / 100;
+  const gap = Math.round((parseMoney(cnt) - (flt + st.byPay.especes)) * 100) / 100;
   el.textContent = gap === 0 ? '✅ Caisse juste — aucun écart.'
     : (gap > 0 ? `⚠️ Excédent de ${fmtEur(gap)} en caisse.` : `⚠️ Il manque ${fmtEur(-gap)} en caisse.`);
   el.className = 'closure-gap ' + (gap === 0 ? 'ok' : 'ko');
@@ -3866,8 +3904,8 @@ function updateClosureGap() {
 function buildClosure() {
   const date = todayISO();
   const st  = closureDayStats(date);
-  const flt = parseFloat(document.getElementById('closure-float').value) || 0;
-  const cnt = parseFloat(document.getElementById('closure-counted').value) || 0;
+  const flt = parseMoney(document.getElementById('closure-float').value);
+  const cnt = parseMoney(document.getElementById('closure-counted').value);
   const r2  = n => Math.round(n * 100) / 100;
   return {
     date, savedAt: new Date().toISOString(),
@@ -3913,6 +3951,74 @@ function renderClosureHistory() {
 document.getElementById('menu-closure').addEventListener('click', () => { closeMenu(); openClosureModal(); });
 document.getElementById('btn-closure-cancel').addEventListener('click', () => closureModal.classList.remove('open'));
 closureModal.addEventListener('click', e => { if (e.target === closureModal) closureModal.classList.remove('open'); });
+
+// ── ☁️ Sauvegarde Google Sheets : clients (fidélité) et clôtures de caisse ────
+// Jusqu'ici ces données n'existaient QUE sur l'iPad : appareil perdu ou données
+// Safari effacées = fidélité et historique de clôtures perdus. Chaque modification
+// est poussée vers des onglets dédiés (« 👤 Clients », « 🧾 Clôtures ») ; au
+// démarrage, si le local est vide (iPad neuf), on restaure depuis le Sheet.
+// Un envoi raté (hors ligne) reste marqué « dirty » et est relancé (15 s / online).
+
+function pushClients() {
+  LS.set('pos_clients_dirty', true);
+  fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify({ clientsSync: clients }) })
+    .then(r => r.json())
+    .then(j => { if (j && j.ok) LS.set('pos_clients_dirty', false); })
+    .catch(() => {});
+}
+
+function pushClosures() {
+  if (isTestMode()) return;   // les clôtures de formation restent locales
+  LS.set('pos_closures_dirty', true);
+  fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify({ closuresSync: getClosures() }) })
+    .then(r => r.json())
+    .then(j => { if (j && j.ok) LS.set('pos_closures_dirty', false); })
+    .catch(() => {});
+}
+
+// Relance des envois en attente (appelée par le filet 15 s, « online » et syncAll)
+function flushDirtyBackups() {
+  if (LS.get('pos_clients_dirty', false)) pushClients();
+  if (!isTestMode() && LS.get('pos_closures_dirty', false)) pushClosures();
+}
+
+// Lecture JSONP générique (les GET Apps Script passent par JSONP, pas de CORS)
+function jsonpGet(action, onOk) {
+  const cbName = '__jp' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+  let script;
+  const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+    if (script) script.remove(); clearTimeout(timer); };
+  const timer = setTimeout(cleanup, 20000);
+  window[cbName] = data => { cleanup(); if (data && data.ok) onOk(data); };
+  script = document.createElement('script');
+  script.src = PROD_SHEETS_URL + '?action=' + action + '&callback=' + cbName + '&t=' + Date.now();
+  script.onerror = cleanup;
+  document.body.appendChild(script);
+}
+
+// Restauration au démarrage : UNIQUEMENT si le local est vide, pour ne jamais
+// écraser des données présentes sur l'iPad. (Écriture directe en localStorage,
+// sans passer par saveClients/saveClosures, pour ne pas re-pousser en écho.)
+(function restoreFromBackup() {
+  if (!clients.length && !LS.get('pos_clients_dirty', false)) {
+    jsonpGet('clients', data => {
+      if (Array.isArray(data.clients) && data.clients.length && !clients.length) {
+        clients = data.clients;
+        LS.set('pos_clients', clients);
+        renderClients();
+        showToast(`☁️ ${clients.length} fiche(s) client restaurée(s) depuis Google Sheets.`);
+      }
+    });
+  }
+  if (!isTestMode() && !getClosures().length && !LS.get('pos_closures_dirty', false)) {
+    jsonpGet('closures', data => {
+      if (Array.isArray(data.closures) && data.closures.length && !getClosures().length) {
+        LS.set(closuresKey(), data.closures);
+        showToast(`☁️ ${data.closures.length} clôture(s) de caisse restaurée(s) depuis Google Sheets.`);
+      }
+    });
+  }
+})();
 
 // ── 🧾 Reçu client (affichage + impression) ───────────────────────────────────
 const receiptModal = document.getElementById('modal-receipt');

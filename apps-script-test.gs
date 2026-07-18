@@ -932,6 +932,95 @@ function createDailyFacebookTrigger() {
 }
 
 // ════════════════════════════════════════════
+//  SAUVEGARDE CLIENTS (fidélité) & CLÔTURES DE CAISSE
+// ════════════════════════════════════════════
+// L'iPad pousse ses fiches clients et ses clôtures pour qu'un appareil perdu ou
+// réinitialisé ne perde ni la fidélité ni l'historique de caisse. Fusion par
+// upsert (jamais de suppression côté Sheet) : c'est une sauvegarde.
+
+const CLIENT_HEADERS  = ['ID', 'Nom', 'Téléphone', 'Notes', 'Pizzas fidélité', 'Récompenses utilisées', 'Créé le', 'Mis à jour le'];
+const CLOSURE_HEADERS = ['Date', 'Employé', 'Emplacement', 'Tickets', 'CA total (€)', 'Espèces (€)', 'Carte (€)', 'Remises (€)',
+                         'Fond de caisse (€)', 'Espèces comptées (€)', 'Écart (€)', 'Notes', 'Enregistré le'];
+
+function dateKey(v) {
+  if (v === '' || v == null) return '';
+  const d = asDate(v);
+  return isNaN(d.getTime()) ? String(v) : Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+}
+
+function getBackupSheet(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.appendRow(headers);
+    sh.setFrozenRows(1);
+    styleHeader(sh, headers.length, '#76894F');
+  }
+  return sh;
+}
+
+function saveClientsBackup(ss, list) {
+  if (!Array.isArray(list)) return 0;
+  const sh  = getBackupSheet(ss, '👤 Clients', CLIENT_HEADERS);
+  const now = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
+  const lr  = sh.getLastRow();
+  const index = {};
+  if (lr > 1) sh.getRange(2, 1, lr - 1, 1).getValues().forEach((r, i) => { if (r[0]) index[String(r[0])] = i + 2; });
+  let n = 0;
+  list.forEach(c => {
+    if (!c || !c.id) return;
+    const row = [String(c.id), c.name || '', c.phone || '', c.notes || '',
+                 Number(c.pizzaCount) || 0, Number(c.rewardsUsed) || 0, c.createdAt || '', now];
+    const at = index[String(c.id)];
+    if (at) sh.getRange(at, 1, 1, CLIENT_HEADERS.length).setValues([row]);
+    else { sh.appendRow(row); index[String(c.id)] = sh.getLastRow(); }
+    n++;
+  });
+  return n;
+}
+
+function getClientsBackup(ss) {
+  const sh = ss.getSheetByName('👤 Clients');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, CLIENT_HEADERS.length).getValues()
+    .filter(r => r[0] !== '' && r[0] != null)
+    .map(r => ({ id: String(r[0]), name: String(r[1] || ''), phone: String(r[2] || ''), notes: String(r[3] || ''),
+                 pizzaCount: Number(r[4]) || 0, rewardsUsed: Number(r[5]) || 0, createdAt: String(r[6] || '') }));
+}
+
+function saveClosuresBackup(ss, list) {
+  if (!Array.isArray(list)) return 0;
+  const sh = getBackupSheet(ss, '🧾 Clôtures', CLOSURE_HEADERS);
+  const lr = sh.getLastRow();
+  const index = {};
+  if (lr > 1) sh.getRange(2, 1, lr - 1, 1).getValues().forEach((r, i) => { const k = dateKey(r[0]); if (k) index[k] = i + 2; });
+  let n = 0;
+  list.forEach(c => {
+    if (!c || !c.date) return;
+    const row = [c.date, c.employee || '', c.location || '', Number(c.tickets) || 0,
+                 eur(c.total), eur(c.especes), eur(c.carte), eur(c.remises),
+                 eur(c.float), eur(c.counted), eur(c.gap), c.notes || '', c.savedAt || ''];
+    const at = index[c.date];
+    if (at) sh.getRange(at, 1, 1, CLOSURE_HEADERS.length).setValues([row]);
+    else { sh.appendRow(row); index[c.date] = sh.getLastRow(); }
+    n++;
+  });
+  return n;
+}
+
+function getClosuresBackup(ss) {
+  const sh = ss.getSheetByName('🧾 Clôtures');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, CLOSURE_HEADERS.length).getValues()
+    .filter(r => r[0] !== '' && r[0] != null)
+    .map(r => ({ date: dateKey(r[0]), employee: String(r[1] || ''), location: String(r[2] || ''),
+                 tickets: Number(r[3]) || 0, total: Number(r[4]) || 0, especes: Number(r[5]) || 0,
+                 carte: Number(r[6]) || 0, remises: Number(r[7]) || 0, float: Number(r[8]) || 0,
+                 counted: Number(r[9]) || 0, gap: Number(r[10]) || 0, notes: String(r[11] || ''),
+                 savedAt: String(r[12] || '') }));
+}
+
+// ════════════════════════════════════════════
 //  doPost / doGet
 // ════════════════════════════════════════════
 
@@ -940,6 +1029,21 @@ function doPost(e) {
     const ss    = getOrCreateSpreadsheet();
     const sheet = getOrCreateTransactionsSheet(ss);
     const data  = JSON.parse(e.postData.contents);
+
+    // Sauvegarde des fiches clients (fidélité) — onglet « 👤 Clients ».
+    if (data && !Array.isArray(data) && data.clientsSync) {
+      const n = saveClientsBackup(ss, data.clientsSync);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, clients: n }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Sauvegarde des clôtures de caisse — onglet « 🧾 Clôtures ».
+    if (data && !Array.isArray(data) && data.closuresSync) {
+      const n = saveClosuresBackup(ss, data.closuresSync);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, closures: n }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     const txs   = Array.isArray(data) ? data : [data];
 
     const lr  = sheet.getLastRow();
@@ -993,6 +1097,10 @@ function doGet(e) {
     payload = { ok: true, cancelled: cancelTicket(e.parameter.id) };
   } else if (action === 'sheeturl') {
     payload = { ok: true, url: getSheetUrl() };
+  } else if (action === 'clients') {
+    payload = { ok: true, clients: getClientsBackup(getOrCreateSpreadsheet()) };
+  } else if (action === 'closures') {
+    payload = { ok: true, closures: getClosuresBackup(getOrCreateSpreadsheet()) };
   } else {
     payload = { ok: true };
   }
