@@ -117,7 +117,9 @@
 // ── Storage helpers ──────────────────────────────────────────────────────────
 const LS = {
   get: (k, def) => { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } },
-  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+  // Renvoie false si l'écriture échoue (stockage plein) : les données critiques
+  // (ventes → addTransaction) doivent vérifier ce retour et réagir.
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
 };
 
 // ── Mode formation / test ─────────────────────────────────────────────────────
@@ -232,12 +234,24 @@ function fmtEur(n) {
 
 // ── Transactions store ───────────────────────────────────────────────────────
 function getTransactions() { return LS.get(txKey(), []); }
-function saveTransactions(txs) { LS.set(txKey(), txs); }
+function saveTransactions(txs) { return LS.set(txKey(), txs); }
 
 function addTransaction(tx) {
   const txs = getTransactions();
   txs.push(tx);
-  saveTransactions(txs);
+  if (saveTransactions(txs)) return;
+  // Stockage plein : purge d'urgence des ventes des jours précédents déjà dans
+  // Google Sheets (mêmes règles que le bouton du menu ☰), puis nouvel essai.
+  const keep = txs.filter(t => !t.synced || localDayOf(t.date) >= todayISO());
+  if (keep.length < txs.length && saveTransactions(keep)) {
+    showToast('⚠️ Stockage plein : anciennes ventes purgées automatiquement (elles restent dans Google Sheets).');
+    return;
+  }
+  // Échec définitif : on prévient bruyamment et on interrompt la validation,
+  // pour que le ticket reste affiché au lieu d'un faux « Paiement enregistré ».
+  alert('⚠️ STOCKAGE PLEIN — cette vente n\'a PAS été enregistrée !\n\n'
+    + 'Notez le ticket sur papier, puis libérez de l\'espace via ☰ ▸ « Purger les ventes locales ».');
+  throw new Error('localStorage plein : vente non enregistrée');
 }
 
 // ── Catalogue partagé (synchronisé entre tous les iPads via Google Sheets) ─────
@@ -358,32 +372,71 @@ function cancelEdit() {
 function cancelTransaction(id) {
   const txs = getTransactions();
   const t = txs.find(t => t.id === id);
-  if (t) { t.cancelled = true; saveTransactions(txs); }
+  if (t && !t.cancelled) {
+    t.cancelled = true;
+    saveTransactions(txs);
+    revertLoyaltyForTx(t);   // la fidélité ne doit plus compter les pizzas d'une vente annulée
+  }
   // met aussi à jour le snapshot chargé depuis Sheets (affichage immédiat)
   if (reportTransactions) {
     const rt = reportTransactions.find(x => x.id === id);
     if (rt) rt.cancelled = true;
   }
-  // propage l'annulation au Google Sheet (statut → Annulé + recalcul des onglets)
-  cancelOnSheets(id, !!(t && t.synced));
+  // Vente encore non synchronisée : elle partira directement en « Annulé » à la sync.
+  if (t && !t.synced) return;
+  // Sinon (déjà dans le Sheet, ou vente absente en local) : file PERSISTANTE,
+  // pour que l'annulation atteigne Google Sheets même si le réseau est coupé
+  // maintenant (relances : toutes les 15 s + retour en ligne + prochain démarrage).
+  enqueueCancel(id);
+  flushPendingCancels();
+}
+
+// ── File d'attente des annulations à propager à Google Sheets ─────────────────
+function cancelQueueKey()   { return isTestMode() ? 'pos_pending_cancels_test' : 'pos_pending_cancels'; }
+function getPendingCancels() { return LS.get(cancelQueueKey(), []); }
+
+function enqueueCancel(id) {
+  const q = getPendingCancels();
+  if (!q.includes(id)) { q.push(id); LS.set(cancelQueueKey(), q); }
+}
+
+// Traite la file une annulation à la fois ; un id n'est retiré qu'après une
+// réponse « ok » du Sheet — sinon il reste en attente pour le prochain essai.
+let isFlushingCancels = false;
+function flushPendingCancels() {
+  if (isFlushingCancels) return;
+  const q = getPendingCancels();
+  if (!q.length || !sheetsUrl()) return;
+  isFlushingCancels = true;
+  const id = q[0];
+  cancelOnSheets(id, (ok, cancelled) => {
+    isFlushingCancels = false;
+    if (!ok) return;   // hors ligne / erreur : réessai plus tard
+    LS.set(cancelQueueKey(), getPendingCancels().filter(x => x !== id));
+    if (cancelled > 0) showToast('Vente annulée aussi dans Google Sheets.');
+    flushPendingCancels();
+  });
 }
 
 // Marque le ticket « Annulé » dans le Google Sheet (via JSONP).
-function cancelOnSheets(id, wasSynced) {
-  if (!sheetsUrl()) return;   // mode test sans backend configuré : rien à propager
-  const cbName = '__cancelCb' + Date.now();
-  let script;
-  const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
-    if (script) script.remove(); clearTimeout(timer); };
-  const timer = setTimeout(cleanup, 20000);
-  window[cbName] = data => {
-    cleanup();
-    if (data && data.ok && data.cancelled > 0) showToast('Vente annulée aussi dans Google Sheets.');
-    else if (!wasSynced) { /* pas encore dans le Sheet : partira en « Annulé » à la sync */ }
+// done(ok, cancelled) : ok = réponse valide reçue ; cancelled = lignes modifiées.
+function cancelOnSheets(id, done) {
+  if (!sheetsUrl()) { done(false, 0); return; }
+  const cbName = '__cancelCb' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+  let script, finished = false;
+  const finish = (ok, cancelled) => {
+    if (finished) return;
+    finished = true;
+    try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+    if (script) script.remove();
+    clearTimeout(timer);
+    done(ok, cancelled);
   };
+  const timer = setTimeout(() => finish(false, 0), 20000);
+  window[cbName] = data => finish(!!(data && data.ok), (data && data.cancelled) || 0);
   script = document.createElement('script');
   script.src = sheetsUrl() + '?action=cancel&id=' + encodeURIComponent(id) + '&callback=' + cbName + '&t=' + Date.now();
-  script.onerror = cleanup;
+  script.onerror = () => finish(false, 0);
   document.body.appendChild(script);
 }
 
@@ -1716,6 +1769,24 @@ function applyLoyaltyAfterSale(lines) {
     // Décalé : le toast de confirmation du paiement (affiché juste après) l'écraserait.
     setTimeout(() => showToast(`🎉 ${c.name} vient de gagner une pizza offerte (fidélité) !`), 3200);
   }
+}
+
+// Annulation d'une vente : retire ses pizzas du compteur fidélité du client,
+// sinon une vente annulée continuerait de faire gagner des pizzas offertes.
+// Pizzas offertes : on re-crédite la récompense consommée (meilleur effort —
+// une offerte hors fidélité, mode 🎁, n'a pas forcément consommé de récompense).
+function revertLoyaltyForTx(t) {
+  if (!t || !t.clientId || !Array.isArray(t.lines)) return;
+  const c = clientById(t.clientId);
+  if (!c) return;
+  const isPizza = l => isPizzaCategory(l.category);
+  const paid = t.lines.filter(l => isPizza(l) && l.price > 0).reduce((s, l) => s + l.qty, 0);
+  const free = t.lines.filter(l => isPizza(l) && l.price === 0).reduce((s, l) => s + l.qty, 0);
+  if (!paid && !free) return;
+  c.pizzaCount = Math.max(0, pizzasOf(c) - paid);
+  if (free) c.rewardsUsed = Math.max(0, (c.rewardsUsed || 0) - free);
+  saveClients();
+  renderTicketClient();   // met à jour le compteur affiché si ce client est sur le ticket
 }
 
 // ── Sélecteur de client depuis le ticket ──────────────────────────────────────
@@ -3495,14 +3566,19 @@ window.addEventListener('online', () => {
   syncToSheets();
   if (cataloguePushPending) pushCatalogue();
   pullCatalogue();
+  flushPendingCancels();
 });
 
-// Filet de sécurité : relance périodique tant qu'il reste des ventes / un
-// catalogue en attente. (L'événement « online » est peu fiable sur iOS Safari.)
+// Filet de sécurité : relance périodique tant qu'il reste des ventes, un
+// catalogue ou des annulations en attente. (« online » est peu fiable sur iOS Safari.)
 setInterval(() => {
   if (getTransactions().some(t => !t.synced)) syncToSheets();
   if (cataloguePushPending) pushCatalogue();
+  if (getPendingCancels().length) flushPendingCancels();
 }, 15000);
+
+// Annulations restées en attente d'une session précédente (app fermée hors ligne)
+flushPendingCancels();
 
 // Sync après chaque transaction validée
 const _origAddTransaction = addTransaction;

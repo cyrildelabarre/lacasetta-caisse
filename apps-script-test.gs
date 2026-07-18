@@ -954,9 +954,10 @@ function doPost(e) {
       const stat = tx.cancelled ? 'Annulé' : 'Validé';
       const nb   = tx.lines.reduce((s,l)=>s+l.qty,0);
       const loc  = tx.location || '';
+      const pay  = payLabel(tx);
       tx.lines.forEach(l => {
         sheet.appendRow([tx.id, d, time, '', l.name, l.category||'', l.price, l.qty, l.subtotal,
-                         tx.total, nb, tx.method, loc, stat, sync]);
+                         tx.total, nb, pay, loc, stat, sync]);
         added++;
       });
     });
@@ -1005,6 +1006,31 @@ function doGet(e) {
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Colonne « Paiement » : pour un paiement mixte, le détail espèces/carte est
+// encodé dans le libellé (ex. « mixte (espèces 12,50 € + carte 8,00 €) ») afin
+// de survivre au rechargement des ventes par le POS — la clôture de caisse en a
+// besoin pour calculer les « espèces attendues ». Pas de colonne supplémentaire :
+// changer HEADERS archiverait la feuille Transactions et repartirait de zéro.
+function payLabel(tx) {
+  if (tx.method === 'mixte' && tx.split) {
+    const f = n => (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.', ',');
+    return 'mixte (espèces ' + f(tx.split.especes) + ' € + carte ' + f(tx.split.carte) + ' €)';
+  }
+  return tx.method;
+}
+
+// Opération inverse : relit méthode + répartition depuis la colonne Paiement.
+// Les anciennes lignes « mixte » sans détail redonnent { method: 'mixte' } seul.
+function parsePay(raw) {
+  const s = String(raw || '');
+  if (!/^mixte/i.test(s)) return { method: s };
+  const mE = s.match(/esp[eè]ces?\s*([\d]+(?:[.,]\d+)?)/i);
+  const mC = s.match(/carte\s*([\d]+(?:[.,]\d+)?)/i);
+  if (!mE || !mC) return { method: 'mixte' };
+  const num = m => Number(m[1].replace(',', '.'));
+  return { method: 'mixte', split: { especes: num(mE), carte: num(mC) } };
+}
+
 // Reconstruit toutes les transactions (1 objet/ticket) à partir des lignes de la feuille.
 function getAllTransactions() {
   const ss    = getOrCreateSpreadsheet();
@@ -1019,11 +1045,13 @@ function getAllTransactions() {
     if (!id) return;
     if (!map[id]) {
       const d = r[COL.date] instanceof Date ? r[COL.date] : new Date(r[COL.date]);
+      const pp = parsePay(r[COL.pay]);
       map[id] = {
         id: id,
         date: d.toISOString(),
         location: r[COL.loc] || '',
-        method: r[COL.pay],
+        method: pp.method,
+        split: pp.split,
         total: Number(r[COL.total]) || 0,
         cancelled: r[COL.statut] === 'Annulé',
         lines: []
