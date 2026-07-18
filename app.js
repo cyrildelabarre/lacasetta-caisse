@@ -1058,6 +1058,31 @@ function syncAll() {
   setTimeout(() => showToast('✅ Données synchronisées.'), 3000);
 }
 document.getElementById('menu-sync').addEventListener('click', () => { closeMenu(); goToCaisse(); syncAll(); });
+
+// ── Purge des ventes locales déjà synchronisées ────────────────────────────────
+// Libère le stockage local : l'historique reste dans Google Sheets (source des
+// rapports). On conserve TOUJOURS : les ventes non synchronisées (sinon elles
+// n'atteindraient jamais le Sheet) et celles du jour (la clôture de caisse a
+// besoin du détail local des paiements mixtes, perdu côté Sheets).
+function purgeLocalSales() {
+  const txs   = getTransactions();
+  const today = todayISO();
+  const keep  = txs.filter(t => !t.synced || localDayOf(t.date) >= today);
+  const removed = txs.length - keep.length;
+  if (!removed) {
+    showToast('Rien à purger : toutes les ventes locales sont du jour ou en attente de sync.');
+    return;
+  }
+  const pending = txs.filter(t => !t.synced).length;
+  let msg = `Supprimer ${removed} vente(s) locale(s) déjà enregistrée(s) dans Google Sheets ?\n\n`
+    + 'Les rapports continueront de les afficher (chargées depuis le Sheet). '
+    + 'Les ventes du jour et celles en attente de synchronisation sont conservées.';
+  if (pending) msg += `\n\n(${pending} vente(s) encore non synchronisée(s) — elles ne seront pas touchées.)`;
+  if (!confirm(msg)) return;
+  saveTransactions(keep);
+  showToast(`🧹 ${removed} vente(s) locale(s) purgée(s) — l'historique reste dans Google Sheets.`);
+}
+document.getElementById('menu-purge').addEventListener('click', () => { closeMenu(); purgeLocalSales(); });
 document.getElementById('temp-month').addEventListener('change', e => { tempMonth = e.target.value || tempMonth; loadTempInto(); });
 document.getElementById('temp-month-prev').addEventListener('click', () => shiftTempMonth(-1));
 document.getElementById('temp-month-next').addEventListener('click', () => shiftTempMonth(1));
