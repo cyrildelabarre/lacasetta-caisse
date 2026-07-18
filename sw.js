@@ -1,4 +1,10 @@
-const CACHE = 'lacasetta-caisse-v6';
+// Nom de cache SANS numéro de version : la stratégie network-first ci-dessous
+// remet chaque fichier en cache à chaque chargement réussi, donc le cache ne
+// peut pas rester périmé (il ne sert qu'en secours hors ligne). Plus besoin
+// d'incrémenter une version à chaque déploiement — l'oublier figeait les iPads
+// hors ligne sur d'anciens fichiers. (« activate » supprime les anciens caches
+// versionnés lacasetta-caisse-v1…v6 encore présents sur les appareils.)
+const CACHE = 'lacasetta-caisse';
 // Chemins RELATIFS : le site est servi sous /lacasetta-caisse/ (GitHub Pages),
 // des chemins absolus (/index.html) pointeraient hors du site et casseraient le SW.
 const ASSETS = [

@@ -564,6 +564,30 @@
     </div>
   </div>
 
+  <!-- Modal générique de confirmation (remplace les confirm() natifs) -->
+  <div class="modal-overlay" id="modal-confirm">
+    <div class="modal modal-sm">
+      <h3 id="confirm-title">Confirmer ?</h3>
+      <p id="confirm-msg" style="white-space:pre-line"></p>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-confirm-no">Annuler</button>
+        <button class="btn-danger" id="btn-confirm-yes">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal générique de saisie (remplace les prompt() natifs) -->
+  <div class="modal-overlay" id="modal-prompt">
+    <div class="modal modal-sm">
+      <h3 id="prompt-title">Saisie</h3>
+      <input type="text" id="prompt-input">
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-prompt-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-prompt-ok">Valider</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal changement de PIN -->
   <div class="modal-overlay" id="modal-pin">
     <div class="modal modal-sm">
@@ -619,6 +643,9 @@
   <div class="modal-overlay" id="modal-closure">
     <div class="modal" style="max-width:460px">
       <h3>🧾 Clôture de caisse — <span id="closure-date-label"></span></h3>
+      <label>Jour à clôturer (une journée oubliée peut être clôturée après coup)
+        <input type="date" id="closure-date">
+      </label>
       <div id="closure-summary" class="closure-summary"></div>
       <div class="closure-fields">
         <label>Fond de caisse (début)

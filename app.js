@@ -239,7 +239,8 @@ function parseMoney(v) {
 
 // ── Transactions store ───────────────────────────────────────────────────────
 function getTransactions() { return LS.get(txKey(), []); }
-function saveTransactions(txs) { return LS.set(txKey(), txs); }
+let txsRev = 0;   // incrémenté à chaque écriture locale — invalide le cache de reportSource()
+function saveTransactions(txs) { txsRev++; return LS.set(txKey(), txs); }
 
 function addTransaction(tx) {
   const txs = getTransactions();
@@ -1140,7 +1141,7 @@ document.getElementById('menu-sync').addEventListener('click', () => { closeMenu
 // rapports). On conserve TOUJOURS : les ventes non synchronisées (sinon elles
 // n'atteindraient jamais le Sheet) et celles du jour (la clôture de caisse a
 // besoin du détail local des paiements mixtes, perdu côté Sheets).
-function purgeLocalSales() {
+async function purgeLocalSales() {
   const txs   = getTransactions();
   const today = todayISO();
   const keep  = txs.filter(t => !t.synced || localDayOf(t.date) >= today);
@@ -1154,7 +1155,7 @@ function purgeLocalSales() {
     + 'Les rapports continueront de les afficher (chargées depuis le Sheet). '
     + 'Les ventes du jour et celles en attente de synchronisation sont conservées.';
   if (pending) msg += `\n\n(${pending} vente(s) encore non synchronisée(s) — elles ne seront pas touchées.)`;
-  if (!confirm(msg)) return;
+  if (!await posConfirm(msg, { title: '🧹 Purger les ventes locales ?', okLabel: 'Purger' })) return;
   saveTransactions(keep);
   showToast(`🧹 ${removed} vente(s) locale(s) purgée(s) — l'historique reste dans Google Sheets.`);
 }
@@ -1206,11 +1207,12 @@ document.getElementById('btn-temp-edit').addEventListener('click', () => {
   tempEditMode = !tempEditMode;
   renderTempTabs();
 });
-function deleteEnclosure(id) {
+async function deleteEnclosure(id) {
   const e = encById(id);
   if (!e) return;
   if (getEnclosures().length <= 1) { showToast('Gardez au moins une enceinte.'); return; }
-  if (!confirm(`Supprimer l'enceinte « ${e.name} » et tous ses relevés ?`)) return;
+  if (!await posConfirm(`Supprimer l'enceinte « ${e.name} » et tous ses relevés ?`,
+    { title: '🌡️ Supprimer l\'enceinte ?', okLabel: 'Supprimer' })) return;
   saveEnclosures(getEnclosures().filter(x => x.id !== id));
   const all = LS.get('pos_temp_records', {});
   Object.keys(all).forEach(k => { if (k.indexOf(id + '|') === 0) delete all[k]; });
@@ -1570,10 +1572,19 @@ function exitOfferMode() {
 }
 
 document.getElementById('btn-clear-ticket').addEventListener('click', () => {
+  if (!ticket.length) return;
+  // Vidage immédiat mais annulable : un toast « ↩ Annuler » restaure le ticket
+  // (plus rapide qu'une confirmation, et un tap accidentel n'est plus fatal).
+  const snapshot = { lines: ticket.map(l => ({ ...l })), client: ticketClient && { ...ticketClient } };
   ticket = [];
   exitOfferMode();
   setTicketClient(null);
   renderTicket();
+  showToast('🧹 Ticket vidé.', { onUndo: () => {
+    ticket = snapshot.lines;
+    if (snapshot.client) setTicketClient(snapshot.client);
+    renderTicket();
+  } });
 });
 
 // ── Payment method ────────────────────────────────────────────────────────────
@@ -1905,10 +1916,11 @@ document.getElementById('btn-client-save').addEventListener('click', () => {
   showToast(wasEditing ? 'Client modifié.' : `Client « ${name} » créé.`);
 });
 
-document.getElementById('btn-client-delete').addEventListener('click', () => {
+document.getElementById('btn-client-delete').addEventListener('click', async () => {
   if (!editingClientId) return;
   const c = clientById(editingClientId);
-  if (!confirm(`Supprimer la fiche de ${c ? c.name : 'ce client'} ? Les ventes passées sont conservées, mais sa fidélité sera perdue.`)) return;
+  if (!await posConfirm(`Supprimer la fiche de ${c ? c.name : 'ce client'} ? Les ventes passées sont conservées, mais sa fidélité sera perdue.`,
+    { title: '👤 Supprimer le client ?', okLabel: 'Supprimer' })) return;
   clients = clients.filter(x => x.id !== editingClientId);
   if (ticketClient && ticketClient.id === editingClientId) setTicketClient(null);
   saveClients();
@@ -2082,9 +2094,10 @@ function closeArticleModal() {
   document.getElementById('modal-article').classList.remove('open');
 }
 
-document.getElementById('btn-modal-delete').addEventListener('click', () => {
+document.getElementById('btn-modal-delete').addEventListener('click', async () => {
   if (!editingArticleId) return;
-  if (!confirm('Supprimer cet article du catalogue ?')) return;
+  if (!await posConfirm('Supprimer cet article du catalogue ? Il disparaîtra aussi des autres iPads (catalogue partagé).',
+    { title: '🗑️ Supprimer l\'article ?', okLabel: 'Supprimer' })) return;
   articles = articles.filter(a => a.id !== editingArticleId);
   // Retire aussi du ticket en cours si présent
   ticket = ticket.filter(l => l.article.id !== editingArticleId);
@@ -2224,10 +2237,9 @@ function renderMemo() {
   tbody.querySelectorAll('.btn-del-tx').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const id = btn.dataset.id;
-      cancelTransaction(id);
-      renderMemo();
-      showToast('Vente annulée.');
+      // Confirmation stylée (modal existant) : une vente ne s'annule plus d'un
+      // seul tap sur la corbeille.
+      openCancelModal(btn.dataset.id);
     });
   });
   tbody.querySelectorAll('.btn-reopen-tx').forEach(btn => {
@@ -2466,10 +2478,10 @@ function renderEmployeeList() {
     renderEmployeeList();
     showToast(`⭐ Par défaut : ${employeeById(b.dataset.id).name}`);
   }));
-  box.querySelectorAll('.employee-edit').forEach(b => b.addEventListener('click', () => {
+  box.querySelectorAll('.employee-edit').forEach(b => b.addEventListener('click', async () => {
     const e = employeeById(b.dataset.id);
     if (!e) return;
-    const name = (prompt('Nom de l\'employé :', e.name) || '').trim();
+    const name = ((await posPrompt('✏️ Nom de l\'employé', e.name)) || '').trim();
     if (!name) return;
     e.name = name;
     saveEmployees();
@@ -2477,11 +2489,12 @@ function renderEmployeeList() {
     renderEmployeeBtn();
     if (horairesReady) renderHoraires();
   }));
-  box.querySelectorAll('.employee-del').forEach(b => b.addEventListener('click', () => {
+  box.querySelectorAll('.employee-del').forEach(b => b.addEventListener('click', async () => {
     const e = employeeById(b.dataset.id);
     if (!e) return;
     if (employees.length <= 1) { showToast('Gardez au moins un employé.'); return; }
-    if (!confirm(`Retirer ${e.name} de la liste ? Ses créneaux passés restent enregistrés.`)) return;
+    if (!await posConfirm(`Retirer ${e.name} de la liste ? Ses créneaux passés restent enregistrés.`,
+      { title: '👤 Retirer l\'employé ?', okLabel: 'Retirer' })) return;
     employees = employees.filter(x => x.id !== e.id);
     saveEmployees();
     // Réaffecte défaut / courant si nécessaire
@@ -2830,13 +2843,26 @@ document.getElementById('btn-generate-report').addEventListener('click', renderR
 // On le FUSIONNE toujours avec les ventes locales (qui contiennent le jour même,
 // même pas encore synchronisées) — les locales priment en cas d'ID identique.
 let reportTransactions = null;
+// Fusion local + Sheets, MÉMOÏSÉE : cette fonction est appelée des dizaines de
+// fois par rendu (reporting, mémo, clients…) ; on ne refusionne que si les
+// ventes locales (txsRev), le snapshot Sheets ou le mode formation ont changé.
+let _srcCache = null;
 function reportSource() {
+  const key = txKey();
+  if (_srcCache && _srcCache.rev === txsRev && _srcCache.sheets === reportTransactions && _srcCache.key === key)
+    return _srcCache.result;
   const local = getTransactions();
-  if (!reportTransactions) return local;
-  const byId = {};
-  reportTransactions.forEach(t => { byId[t.id] = t; });
-  local.forEach(t => { byId[t.id] = t; });
-  return Object.values(byId);
+  let result;
+  if (!reportTransactions) {
+    result = local;
+  } else {
+    const byId = {};
+    reportTransactions.forEach(t => { byId[t.id] = t; });
+    local.forEach(t => { byId[t.id] = t; });
+    result = Object.values(byId);
+  }
+  _srcCache = { rev: txsRev, sheets: reportTransactions, key, result };
+  return result;
 }
 
 function txsForRange(start, end) {
@@ -3513,22 +3539,66 @@ document.addEventListener('pos:toast', e => showToast(e.detail));
 
 // File de toasts : les messages s'affichent l'un après l'autre au lieu de
 // s'écraser (paiement + fidélité + sync peuvent arriver en rafale).
+// opts.onUndo : ajoute un bouton « ↩ Annuler » et prolonge l'affichage à 5 s.
 let toastQueue = [], toastActive = false;
-function showToast(msg) {
-  if (toastQueue[toastQueue.length - 1] === msg) return;   // doublon consécutif
-  toastQueue.push(msg);
+function showToast(msg, opts) {
+  const last = toastQueue[toastQueue.length - 1];
+  if (last && last.msg === msg && !opts) return;   // doublon consécutif
+  toastQueue.push({ msg, opts: opts || null });
   if (!toastActive) nextToast();
 }
 function nextToast() {
   const el = document.getElementById('toast');
   if (!toastQueue.length) { toastActive = false; return; }
   toastActive = true;
-  el.textContent = toastQueue.shift();
+  const { msg, opts } = toastQueue.shift();
+  el.textContent = msg;   // remet aussi le contenu à zéro (retire un éventuel bouton)
+  let timer;
+  const advance = () => { clearTimeout(timer); el.classList.remove('show'); setTimeout(nextToast, 250); };
+  if (opts && opts.onUndo) {
+    const btn = document.createElement('button');
+    btn.textContent = opts.undoLabel || '↩ Annuler';
+    btn.style.cssText = 'margin-left:.8rem;background:rgba(255,255,255,.92);color:#89310B;border:0;border-radius:6px;padding:.3rem .8rem;font-weight:700;cursor:pointer;';
+    btn.addEventListener('click', () => { opts.onUndo(); advance(); });
+    el.appendChild(btn);
+  }
   el.classList.add('show');
-  setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(nextToast, 250);   // petite respiration entre deux messages
-  }, 2600);
+  timer = setTimeout(advance, opts && opts.onUndo ? 5000 : 2600);
+}
+
+// ── Confirmation / saisie stylées (remplacent confirm() et prompt() natifs,
+//    bloquants et non maquettés sur iPad) ───────────────────────────────────────
+function posConfirm(message, opts) {
+  opts = opts || {};
+  return new Promise(resolve => {
+    const ov  = document.getElementById('modal-confirm');
+    const yes = document.getElementById('btn-confirm-yes');
+    const no  = document.getElementById('btn-confirm-no');
+    document.getElementById('confirm-title').textContent = opts.title || 'Confirmer ?';
+    document.getElementById('confirm-msg').textContent = message;
+    yes.textContent = opts.okLabel || 'Confirmer';
+    const done = v => { ov.classList.remove('open'); ov.onclick = yes.onclick = no.onclick = null; resolve(v); };
+    yes.onclick = () => done(true);
+    no.onclick  = () => done(false);
+    ov.onclick  = e => { if (e.target === ov) done(false); };
+    ov.classList.add('open');
+  });
+}
+function posPrompt(title, value) {
+  return new Promise(resolve => {
+    const ov     = document.getElementById('modal-prompt');
+    const input  = document.getElementById('prompt-input');
+    const ok     = document.getElementById('btn-prompt-ok');
+    const cancel = document.getElementById('btn-prompt-cancel');
+    document.getElementById('prompt-title').textContent = title;
+    input.value = value || '';
+    const done = v => { ov.classList.remove('open'); ov.onclick = ok.onclick = cancel.onclick = null; resolve(v); };
+    ok.onclick     = () => done(input.value.trim());
+    cancel.onclick = () => done(null);
+    ov.onclick     = e => { if (e.target === ov) done(null); };
+    ov.classList.add('open');
+    setTimeout(() => input.focus(), 50);
+  });
 }
 
 // ══════════════════════════════════════════
@@ -3803,8 +3873,8 @@ function renderHoldsModal() {
     box.appendChild(row);
   });
   box.querySelectorAll('.hold-resume').forEach(b => b.addEventListener('click', () => resumeHold(b.dataset.id)));
-  box.querySelectorAll('.hold-del').forEach(b => b.addEventListener('click', () => {
-    if (!confirm('Supprimer ce ticket en attente ?')) return;
+  box.querySelectorAll('.hold-del').forEach(b => b.addEventListener('click', async () => {
+    if (!await posConfirm('Supprimer ce ticket en attente ?', { title: '⏸ Supprimer le ticket ?', okLabel: 'Supprimer' })) return;
     saveHolds(getHolds().filter(x => x.id !== b.dataset.id));
     renderHoldsModal();
   }));
@@ -3863,10 +3933,16 @@ function closureDayStats(date) {
   return { txs, total: txs.reduce((s, t) => s + t.total, 0), byPay, remises };
 }
 
-function openClosureModal() {
-  const date = todayISO();
+// Jour sélectionné dans le modal (par défaut aujourd'hui ; une journée oubliée
+// peut être clôturée après coup — les ventes passées viennent de Google Sheets).
+function closureSelectedDate() {
+  return document.getElementById('closure-date').value || todayISO();
+}
+
+function refreshClosureModal() {
+  const date = closureSelectedDate();
   document.getElementById('closure-date-label').textContent =
-    new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const st = closureDayStats(date);
   document.getElementById('closure-summary').innerHTML = `
     <div class="summary-chip"><strong>${st.txs.length}</strong>tickets</div>
@@ -3874,17 +3950,25 @@ function openClosureModal() {
     <div class="summary-chip"><strong>${fmtEur(st.byPay.especes)}</strong>Espèces attendues</div>
     <div class="summary-chip"><strong>${fmtEur(st.byPay.carte)}</strong>Carte (TPE)</div>`;
   const existing = getClosures().find(c => c.date === date);
-  const prev = getClosures().slice(-1)[0];
+  const prev = getClosures().filter(c => c.date < date).slice(-1)[0];
   document.getElementById('closure-float').value   = existing ? existing.float : (prev ? prev.float : '');
   document.getElementById('closure-counted').value = existing ? existing.counted : '';
   document.getElementById('closure-notes').value   = existing ? (existing.notes || '') : '';
   updateClosureGap();
   renderClosureHistory();
-  closureModal.classList.add('open');
 }
 
+function openClosureModal() {
+  const dateInput = document.getElementById('closure-date');
+  dateInput.value = todayISO();
+  dateInput.max   = todayISO();   // pas de clôture dans le futur
+  refreshClosureModal();
+  closureModal.classList.add('open');
+}
+document.getElementById('closure-date').addEventListener('change', refreshClosureModal);
+
 function updateClosureGap() {
-  const st  = closureDayStats(todayISO());
+  const st  = closureDayStats(closureSelectedDate());
   const flt = parseMoney(document.getElementById('closure-float').value);
   const cnt = document.getElementById('closure-counted').value;
   const el  = document.getElementById('closure-gap');
@@ -3902,7 +3986,7 @@ function updateClosureGap() {
   document.getElementById(id).addEventListener('input', updateClosureGap));
 
 function buildClosure() {
-  const date = todayISO();
+  const date = closureSelectedDate();
   const st  = closureDayStats(date);
   const flt = parseMoney(document.getElementById('closure-float').value);
   const cnt = parseMoney(document.getElementById('closure-counted').value);
@@ -3925,7 +4009,7 @@ document.getElementById('btn-closure-save').addEventListener('click', () => {
   list.sort((a, b) => a.date.localeCompare(b.date));
   saveClosures(list);
   renderClosureHistory();
-  showToast(`💾 Journée clôturée — écart : ${fmtEur(c.gap)}.`);
+  showToast(`💾 Journée du ${fmtDate(c.date)} clôturée — écart : ${fmtEur(c.gap)}.`);
 });
 document.getElementById('btn-closure-export').addEventListener('click', () => {
   const c = buildClosure();
