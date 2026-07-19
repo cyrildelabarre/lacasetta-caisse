@@ -360,10 +360,14 @@ function pullCatalogue() {
     if (!data || !data.ok || !Array.isArray(data.articles)) return;
     const remoteAt = data.updatedAt || '';
     if (data.articles.length === 0) {
-      // Cloud vide : le 1er iPad amorce le catalogue partagé avec ses articles.
-      if (articles.length && !remoteAt) {
-        catalogueUpdatedAt = new Date().toISOString();
-        LS.set('pos_catalogue_updatedAt', catalogueUpdatedAt);
+      // Cloud vide : un iPad amorce le catalogue partagé avec ses articles —
+      // mais UNIQUEMENT si son menu a déjà été personnalisé (catalogueUpdatedAt
+      // non vide) et hors environnement de développement. Sans ces gardes, un
+      // navigateur vierge (test local, visiteur de l'URL publique) qui ouvrait
+      // l'app amorçait le cloud avec le menu PAR DÉFAUT, que les vrais iPads
+      // adoptaient ensuite — perdant leurs articles personnalisés (Boissons…).
+      const isDev = /^(localhost|127\.)/.test(location.hostname);
+      if (articles.length && !remoteAt && catalogueUpdatedAt && !isDev) {
         pushCatalogue();
       }
       return;
