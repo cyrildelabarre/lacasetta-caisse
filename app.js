@@ -8,7 +8,29 @@
 // ══════════════════════════════════════════
 (function initLogin() {
   const DEFAULT_PIN = '1234';
-  const getPin = () => localStorage.getItem('pos_pin') || DEFAULT_PIN;
+
+  // Le PIN n'est plus stocké en clair : on garde son empreinte SHA-256 (salée).
+  // Quiconque ouvre les données Safari ne peut plus lire le code directement.
+  async function sha256(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lacasetta|' + s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  // Migration : un ancien PIN en clair est converti en empreinte puis effacé.
+  async function getPinHash() {
+    const legacy = localStorage.getItem('pos_pin');
+    if (legacy) {
+      localStorage.setItem('pos_pin_hash', await sha256(legacy));
+      localStorage.removeItem('pos_pin');
+    }
+    return localStorage.getItem('pos_pin_hash') || await sha256(DEFAULT_PIN);
+  }
+
+  // Anti-force brute : 5 échecs → verrou de 30 s (persistant, un rechargement
+  // de la page ne le contourne pas).
+  const FAILS_BEFORE_LOCK = 5, LOCK_SECONDS = 30;
+  const failsGet  = () => parseInt(localStorage.getItem('pos_pin_fails') || '0', 10);
+  const lockUntil = () => parseInt(localStorage.getItem('pos_pin_lock') || '0', 10);
+  const lockRemaining = () => Math.max(0, Math.ceil((lockUntil() - Date.now()) / 1000));
 
   const screen   = document.getElementById('login-screen');
   const dots     = document.querySelectorAll('#pin-dots span');
@@ -23,20 +45,33 @@
     errorEl.textContent = '';
   }
 
-  function shake() {
+  function shake(msg) {
     dots.forEach(d => d.classList.add('error'));
-    errorEl.textContent = 'Code incorrect';
+    errorEl.textContent = msg || 'Code incorrect';
     entry = '';
-    setTimeout(updateDots, 600);
+    // updateDots efface le message : on le réaffiche après la reprise des points.
+    setTimeout(() => { updateDots(); errorEl.textContent = msg || ''; }, 600);
   }
 
-  function tryUnlock() {
-    if (entry === getPin()) {
+  async function tryUnlock() {
+    const rem = lockRemaining();
+    if (rem > 0) { shake(`⏳ Trop d'essais — réessayez dans ${rem} s.`); return; }
+    if (await sha256(entry) === await getPinHash()) {
+      localStorage.removeItem('pos_pin_fails');
+      localStorage.removeItem('pos_pin_lock');
       sessionStorage.setItem('pos_unlocked', '1');
       screen.classList.add('hidden');
       setTimeout(() => screen.style.display = 'none', 300);
     } else {
-      shake();
+      const fails = failsGet() + 1;
+      if (fails >= FAILS_BEFORE_LOCK) {
+        localStorage.setItem('pos_pin_lock', String(Date.now() + LOCK_SECONDS * 1000));
+        localStorage.setItem('pos_pin_fails', '0');
+        shake(`⏳ ${FAILS_BEFORE_LOCK} essais ratés — clavier verrouillé ${LOCK_SECONDS} s.`);
+      } else {
+        localStorage.setItem('pos_pin_fails', String(fails));
+        shake();
+      }
     }
   }
 
@@ -97,17 +132,17 @@
     document.getElementById('modal-pin').classList.remove('open');
   });
 
-  document.getElementById('btn-pin-save').addEventListener('click', () => {
+  document.getElementById('btn-pin-save').addEventListener('click', async () => {
     const current = document.getElementById('pin-current').value.trim();
     const nouveau = document.getElementById('pin-new').value.trim();
     const confirm = document.getElementById('pin-confirm').value.trim();
     const errEl   = document.getElementById('pin-modal-error');
 
-    if (current !== getPin())            { errEl.textContent = 'Code actuel incorrect.'; return; }
+    if (await sha256(current) !== await getPinHash()) { errEl.textContent = 'Code actuel incorrect.'; return; }
     if (!/^\d{4}$/.test(nouveau))        { errEl.textContent = 'Le nouveau PIN doit contenir exactement 4 chiffres.'; return; }
     if (nouveau !== confirm)             { errEl.textContent = 'Les deux PINs ne correspondent pas.'; return; }
 
-    localStorage.setItem('pos_pin', nouveau);
+    localStorage.setItem('pos_pin_hash', await sha256(nouveau));
     document.getElementById('modal-pin').classList.remove('open');
     // showToast est défini plus bas — on utilise un event pour ne pas dépendre de l'ordre
     document.dispatchEvent(new CustomEvent('pos:toast', { detail: '✔ Code PIN modifié.' }));
@@ -132,6 +167,19 @@ const TEST_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzMZ1t__JojJARE
 function isTestMode() { return LS.get('pos_testmode', false) === true; }
 function sheetsUrl()  { return isTestMode() ? TEST_SHEETS_URL : PROD_SHEETS_URL; }
 function txKey()      { return isTestMode() ? 'pos_transactions_test' : 'pos_transactions'; }
+
+// ── Jeton d'accès Google Sheets ───────────────────────────────────────────────
+// Les URLs /exec ci-dessus sont visibles (dépôt public) : sans contrôle,
+// n'importe qui peut lire tout l'historique de ventes ou injecter des données.
+// Le jeton est saisi UNE FOIS sur chaque iPad (☰ ▸ 🔑 Jeton Google Sheets) et
+// stocké uniquement sur l'appareil — jamais dans le code. L'Apps Script le
+// compare à sa Script Property POS_TOKEN (accès ouvert tant qu'elle est vide,
+// pour une migration sans interruption).
+function sheetsToken() { return localStorage.getItem('pos_sheets_token') || ''; }
+function withToken(url) {
+  const t = sheetsToken();
+  return t ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(t) : url;
+}
 
 // ── State ────────────────────────────────────────────────────────────────────
 const CATALOGUE_VERSION = 2;
@@ -263,9 +311,13 @@ function addTransaction(tx) {
 // ── Catalogue partagé (synchronisé entre tous les iPads via Google Sheets) ─────
 // Le catalogue passe TOUJOURS par le backend de prod (même en mode formation) :
 // c'est le même menu d'articles pour tout le monde.
-let catalogueUpdatedAt   = LS.get('pos_catalogue_updatedAt', '');
-let cataloguePushPending = false;
-let catalogueLoading     = false;
+let catalogueUpdatedAt = LS.get('pos_catalogue_updatedAt', '');
+let catalogueLoading   = false;
+// « Édition locale en attente d'envoi » : PERSISTANT. En mémoire, une édition
+// faite hors ligne était perdue au rechargement : le flag retombait à false et
+// un pull pouvait écraser l'édition locale avec la version distante.
+function isCataloguePushPending()   { return LS.get('pos_catalogue_dirty', false); }
+function setCataloguePushPending(v) { LS.set('pos_catalogue_dirty', !!v); }
 
 // Sauvegarde locale + envoi au cloud à chaque modification du catalogue.
 function saveArticles() {
@@ -277,6 +329,7 @@ function saveArticles() {
 
 // Envoie tout le catalogue au Google Sheet (avec reprise si hors-ligne).
 async function pushCatalogue() {
+  setCataloguePushPending(true);   // levé AVANT l'envoi : survit à une fermeture en plein vol
   const payload = {
     catalogue: articles.map((a, i) => ({
       id: a.id, name: a.name, category: a.category,
@@ -285,12 +338,11 @@ async function pushCatalogue() {
     updatedAt: catalogueUpdatedAt
   };
   try {
-    const res = await fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify(payload) });
+    const res = await fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify(payload) });
     const j = await res.json();
-    if (j && j.ok) { cataloguePushPending = false; setSyncStatus('ok'); setTimeout(() => setSyncStatus('idle'), 2000); }
-    else cataloguePushPending = true;
+    if (j && j.ok) { setCataloguePushPending(false); setSyncStatus('ok'); setTimeout(() => setSyncStatus('idle'), 2000); }
   } catch {
-    cataloguePushPending = true;   // repartira via l'écouteur online / la relance périodique
+    // flag toujours levé : repartira via l'écouteur online / la relance périodique
   }
 }
 
@@ -317,7 +369,7 @@ function pullCatalogue() {
       return;
     }
     // On adopte le catalogue distant s'il est plus récent et qu'on n'a pas d'édition locale en attente.
-    if (!cataloguePushPending && (!catalogueUpdatedAt || remoteAt > catalogueUpdatedAt)) {
+    if (!isCataloguePushPending() && (!catalogueUpdatedAt || remoteAt > catalogueUpdatedAt)) {
       articles = data.articles.map(a => ({
         id: a.id, name: a.name, category: a.category,
         price: Number(a.price), emoji: a.emoji || '', active: a.active !== false
@@ -330,7 +382,7 @@ function pullCatalogue() {
     }
   };
   script = document.createElement('script');
-  script.src = PROD_SHEETS_URL + '?action=catalogue&callback=' + cbName + '&t=' + Date.now();
+  script.src = withToken(PROD_SHEETS_URL + '?action=catalogue&callback=' + cbName + '&t=' + Date.now());
   script.onerror = cleanup;
   document.body.appendChild(script);
 }
@@ -441,7 +493,7 @@ function cancelOnSheets(id, done) {
   const timer = setTimeout(() => finish(false, 0), 20000);
   window[cbName] = data => finish(!!(data && data.ok), (data && data.cancelled) || 0);
   script = document.createElement('script');
-  script.src = sheetsUrl() + '?action=cancel&id=' + encodeURIComponent(id) + '&callback=' + cbName + '&t=' + Date.now();
+  script.src = withToken(sheetsUrl() + '?action=cancel&id=' + encodeURIComponent(id) + '&callback=' + cbName + '&t=' + Date.now());
   script.onerror = () => finish(false, 0);
   document.body.appendChild(script);
 }
@@ -1002,7 +1054,7 @@ function tempPayload() {
 function pushTemperatures() {
   const p = tempPayload();
   if (!p.tempSync.days.length) return;
-  fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify(p) }).catch(() => {});
+  fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify(p) }).catch(() => {});
 }
 
 // Récupère les relevés depuis Google Sheets au démarrage (comme les ventes) : les
@@ -1043,7 +1095,7 @@ function pullTemperatures() {
     if (document.getElementById('modal-temp').classList.contains('open')) loadTempInto();
   };
   script = document.createElement('script');
-  script.src = PROD_SHEETS_URL + '?action=temperatures&callback=' + cbName + '&t=' + Date.now();
+  script.src = withToken(PROD_SHEETS_URL + '?action=temperatures&callback=' + cbName + '&t=' + Date.now());
   script.onerror = cleanup;
   document.body.appendChild(script);
 }
@@ -1112,14 +1164,14 @@ function pushAllTemperatures() {
       initials: iniByDay[d] || ''
     }));
     if (!days.length) return;
-    fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify({ tempSync: { enclosure: enc.name, type: enc.type, month, days } }) }).catch(() => {});
+    fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ tempSync: { enclosure: enc.name, type: enc.type, month, days } }) }).catch(() => {});
   });
 }
 
 // Échange complet à la demande : envoie ET récupère ventes, catalogue, relevés.
 async function syncAll() {
   showToast('🔄 Synchronisation en cours…');
-  if (cataloguePushPending) pushCatalogue();
+  if (isCataloguePushPending()) pushCatalogue();
   pullCatalogue();                        // récupère le catalogue partagé
   pushAllTemperatures();                  // envoie tous les relevés locaux
   pullTemperatures();                     // récupère les relevés
@@ -1160,6 +1212,16 @@ async function purgeLocalSales() {
   showToast(`🧹 ${removed} vente(s) locale(s) purgée(s) — l'historique reste dans Google Sheets.`);
 }
 document.getElementById('menu-purge').addEventListener('click', () => { closeMenu(); purgeLocalSales(); });
+
+// ── Jeton d'accès Google Sheets (voir sheetsToken/withToken) ──────────────────
+document.getElementById('menu-token').addEventListener('click', async () => {
+  closeMenu();
+  const t = await posPrompt('🛡️ Jeton Google Sheets (identique à POS_TOKEN côté script — vide = aucun)', sheetsToken());
+  if (t === null) return;   // annulé
+  if (t) localStorage.setItem('pos_sheets_token', t);
+  else   localStorage.removeItem('pos_sheets_token');
+  showToast(t ? '🛡️ Jeton enregistré — envoyé avec chaque synchronisation.' : 'Jeton retiré.');
+});
 document.getElementById('temp-month').addEventListener('change', e => { tempMonth = e.target.value || tempMonth; loadTempInto(); });
 document.getElementById('temp-month-prev').addEventListener('click', () => shiftTempMonth(-1));
 document.getElementById('temp-month-next').addEventListener('click', () => shiftTempMonth(1));
@@ -1819,7 +1881,9 @@ function revertLoyaltyForTx(t) {
   const free = t.lines.filter(l => isPizza(l) && l.price === 0).reduce((s, l) => s + l.qty, 0);
   if (!paid && !free) return;
   c.pizzaCount = Math.max(0, pizzasOf(c) - paid);
-  if (free) c.rewardsUsed = Math.max(0, (c.rewardsUsed || 0) - free);
+  // free > 0 seulement : l'annulation d'un REMBOURSEMENT (quantités négatives)
+  // ne doit pas re-consommer de récompense.
+  if (free > 0) c.rewardsUsed = Math.max(0, (c.rewardsUsed || 0) - free);
   saveClients();
   renderTicketClient();   // met à jour le compteur affiché si ce client est sur le ticket
 }
@@ -2212,8 +2276,9 @@ function renderMemo() {
     const linesStr = (tx.clientName ? `👤 <strong>${escapeHtml(tx.clientName)}</strong> · ` : '')
       + (tx.employee ? `<span class="memo-emp">🧑‍🍳 ${escapeHtml(tx.employee)}</span> · ` : '')
       + (tx.complementOf ? '🔁 <em>complément</em> · ' : '')
+      + (tx.refundOf ? '↩ <em>remboursement</em> · ' : '')
       + (tx.discount && tx.discount.amount ? `🏷️ <em>remise −${fmtEur(tx.discount.amount)}</em> · ` : '')
-      + tx.lines.map(l => `${emojiFor(l)}${escapeHtml(l.name)} ×${l.qty}`).join(', ');
+      + tx.lines.map(l => `${emojiFor(l)}${escapeHtml(l.name)} ×${Math.abs(l.qty)}`).join(', ');
     const badge = tx.cancelled
       ? '<span class="badge-pay badge-annule">Annulé</span>'
       : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte', mixte:'💶+💳 Mixte'}[tx.method] ?? tx.method}</span>`;
@@ -2227,7 +2292,9 @@ function renderMemo() {
       <td class="${cls}" style="font-weight:700">${fmtEur(tx.total)}</td>
       <td class="memo-actions">${tx.cancelled ? '' : `
         <button class="btn-receipt-tx fx-new" data-id="${tx.id}" title="Afficher / imprimer le reçu client">🧾</button>
+        ${tx.refundOf ? '' : `
         <button class="btn-reopen-tx" data-id="${tx.id}" title="Rouvrir : ajouter des articles à cette vente">🔁 <span>Complément</span></button>
+        <button class="btn-refund-tx" data-id="${tx.id}" title="Rembourser tout ou partie de cette vente">↩</button>`}
         <button class="btn-del-tx" data-id="${tx.id}" title="Confirmer l'annulation">🗑️</button>`}</td>
     `;
     tbody.appendChild(tr);
@@ -2244,6 +2311,9 @@ function renderMemo() {
   });
   tbody.querySelectorAll('.btn-reopen-tx').forEach(btn => {
     btn.addEventListener('click', () => reopenTransaction(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.btn-refund-tx').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); openRefundModal(btn.dataset.id); });
   });
   tbody.querySelectorAll('.btn-receipt-tx').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); openReceipt(btn.dataset.id); });
@@ -2933,7 +3003,7 @@ function loadFromSheets(opts) {
     if (!opts.auto) showToast(`☁️ ${n} ${mot} chargée${n > 1 ? 's' : ''} depuis Google Sheets.`);
   };
   script = document.createElement('script');
-  script.src = sheetsUrl() + '?action=transactions&callback=' + cbName + '&t=' + Date.now();
+  script.src = withToken(sheetsUrl() + '?action=transactions&callback=' + cbName + '&t=' + Date.now());
   script.onerror = () => fail('Échec du chargement depuis Google Sheets (réseau ?).');
   document.body.appendChild(script);
 }
@@ -3641,7 +3711,7 @@ async function syncToSheets() {
   isSyncing = true;
   setSyncStatus('syncing');
   try {
-    const res = await fetch(sheetsUrl(), {
+    const res = await fetch(withToken(sheetsUrl()), {
       method: 'POST',
       body: JSON.stringify(pending),
     });
@@ -3669,7 +3739,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => {
   setSyncStatus('syncing');
   syncToSheets();
-  if (cataloguePushPending) pushCatalogue();
+  if (isCataloguePushPending()) pushCatalogue();
   pullCatalogue();
   flushPendingCancels();
   flushDirtyBackups();
@@ -3680,7 +3750,7 @@ window.addEventListener('online', () => {
 // fiable sur iOS Safari.)
 setInterval(() => {
   if (getTransactions().some(t => !t.synced)) syncToSheets();
-  if (cataloguePushPending) pushCatalogue();
+  if (isCataloguePushPending()) pushCatalogue();
   if (getPendingCancels().length) flushPendingCancels();
   flushDirtyBackups();
 }, 15000);
@@ -4045,7 +4115,7 @@ closureModal.addEventListener('click', e => { if (e.target === closureModal) clo
 
 function pushClients() {
   LS.set('pos_clients_dirty', true);
-  fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify({ clientsSync: clients }) })
+  fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ clientsSync: clients }) })
     .then(r => r.json())
     .then(j => { if (j && j.ok) LS.set('pos_clients_dirty', false); })
     .catch(() => {});
@@ -4054,7 +4124,7 @@ function pushClients() {
 function pushClosures() {
   if (isTestMode()) return;   // les clôtures de formation restent locales
   LS.set('pos_closures_dirty', true);
-  fetch(PROD_SHEETS_URL, { method: 'POST', body: JSON.stringify({ closuresSync: getClosures() }) })
+  fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ closuresSync: getClosures() }) })
     .then(r => r.json())
     .then(j => { if (j && j.ok) LS.set('pos_closures_dirty', false); })
     .catch(() => {});
@@ -4075,7 +4145,7 @@ function jsonpGet(action, onOk) {
   const timer = setTimeout(cleanup, 20000);
   window[cbName] = data => { cleanup(); if (data && data.ok) onOk(data); };
   script = document.createElement('script');
-  script.src = PROD_SHEETS_URL + '?action=' + action + '&callback=' + cbName + '&t=' + Date.now();
+  script.src = withToken(PROD_SHEETS_URL + '?action=' + action + '&callback=' + cbName + '&t=' + Date.now());
   script.onerror = cleanup;
   document.body.appendChild(script);
 }
@@ -4103,6 +4173,116 @@ function jsonpGet(action, onOk) {
     });
   }
 })();
+
+// ── ↩ Remboursement partiel / total d'une vente payée ─────────────────────────
+// Crée une transaction LIÉE (refundOf) aux quantités NÉGATIVES : rapports,
+// clôture (espèces attendues) et Google Sheets se corrigent naturellement par
+// addition — la vente d'origine n'est jamais réécrite. Le prix remboursé par
+// unité est le prix effectivement payé (sous-total / quantité, remises incluses).
+let refundOriginal = null, refundQty = {}, refundMethod = 'especes';
+const refundModal = document.getElementById('modal-refund');
+
+// Quantités déjà remboursées pour une vente, par nom de ligne. (Les liens
+// refundOf ne sont pas stockés dans le Sheet : la garde s'appuie sur les
+// remboursements encore présents en local ou faits dans la session.)
+function refundedSoFar(txId) {
+  const map = {};
+  reportSource().filter(t => t.refundOf === txId && !t.cancelled).forEach(t =>
+    t.lines.forEach(l => { map[l.name] = (map[l.name] || 0) + Math.abs(l.qty); }));
+  return map;
+}
+
+function openRefundModal(txId) {
+  const tx = reportSource().find(t => t.id === txId);
+  if (!tx || tx.cancelled || tx.refundOf) { showToast('Vente introuvable.'); return; }
+  refundOriginal = tx;
+  refundQty = {};
+  refundMethod = tx.method === 'carte' ? 'carte' : 'especes';
+  document.getElementById('refund-orig').textContent =
+    `${fmtDate(localDayOf(tx.date))} · ${fmtTime(tx.date)} — total payé ${fmtEur(tx.total)}`;
+  document.querySelectorAll('#refund-method .pay-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.method === refundMethod));
+  renderRefundLines();
+  refundModal.classList.add('open');
+}
+
+function renderRefundLines() {
+  const done = refundedSoFar(refundOriginal.id);
+  const el = document.getElementById('refund-lines');
+  el.innerHTML = '';
+  let total = 0;
+  refundOriginal.lines.forEach((l, i) => {
+    const restant = l.qty - (done[l.name] || 0);
+    const sel  = refundQty[i] || 0;
+    const unit = l.qty ? l.subtotal / l.qty : 0;
+    total += unit * sel;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem 0;border-bottom:1px solid rgba(0,0,0,.06)';
+    row.innerHTML = `
+      <span style="flex:1">${emojiFor(l)}${escapeHtml(l.name)}
+        <small style="color:var(--mid)"> · ${fmtEur(unit)}/u — ${restant} remboursable(s)</small></span>
+      <span style="display:flex;align-items:center;gap:.4rem">
+        <button class="qty-btn" data-i="${i}" data-d="-1" ${sel <= 0 ? 'disabled' : ''}>−</button>
+        <b style="min-width:1.4rem;text-align:center;display:inline-block">${sel}</b>
+        <button class="qty-btn" data-i="${i}" data-d="1" ${sel >= restant ? 'disabled' : ''}>+</button>
+      </span>`;
+    el.appendChild(row);
+  });
+  document.getElementById('refund-total').textContent = fmtEur(Math.round(total * 100) / 100);
+  el.querySelectorAll('button[data-i]').forEach(b => b.addEventListener('click', () => {
+    const i = +b.dataset.i;
+    const restant = refundOriginal.lines[i].qty - (refundedSoFar(refundOriginal.id)[refundOriginal.lines[i].name] || 0);
+    refundQty[i] = Math.min(Math.max((refundQty[i] || 0) + (+b.dataset.d), 0), restant);
+    renderRefundLines();
+  }));
+}
+
+document.querySelectorAll('#refund-method .pay-btn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#refund-method .pay-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  refundMethod = b.dataset.method;
+}));
+
+document.getElementById('btn-refund-save').addEventListener('click', () => {
+  if (!refundOriginal) return;
+  const lines = [];
+  refundOriginal.lines.forEach((l, i) => {
+    const q = refundQty[i] || 0;
+    if (!q) return;
+    const unit = l.qty ? l.subtotal / l.qty : 0;
+    lines.push({ name: l.name, category: l.category, price: l.price, emoji: l.emoji,
+                 qty: -q, subtotal: -Math.round(unit * q * 100) / 100 });
+  });
+  if (!lines.length) { showToast('Sélectionnez au moins un article à rembourser.'); return; }
+  const total = Math.round(lines.reduce((s, l) => s + l.subtotal, 0) * 100) / 100;
+  const tx = {
+    id:         uid(),
+    date:       new Date().toISOString(),
+    location:   refundOriginal.location || currentLocation || '',
+    lines, total,
+    method:     refundMethod,
+    cancelled:  false,
+    refundOf:   refundOriginal.id,
+    clientId:   refundOriginal.clientId,
+    clientName: refundOriginal.clientName,
+    employeeId: currentEmployeeId || undefined,
+    employee:   currentEmployeeName() || undefined,
+  };
+  addTransaction(tx);
+  // Fidélité : les pizzas payées puis remboursées ne comptent plus.
+  const c = refundOriginal.clientId && clientById(refundOriginal.clientId);
+  if (c) {
+    const pz = lines.filter(l => isPizzaCategory(l.category) && l.price > 0)
+                    .reduce((s, l) => s + Math.abs(l.qty), 0);
+    if (pz) { c.pizzaCount = Math.max(0, pizzasOf(c) - pz); saveClients(); }
+  }
+  refundModal.classList.remove('open');
+  refundOriginal = null;
+  renderMemo();
+  showToast(`↩ Remboursement de ${fmtEur(-total)} enregistré (${refundMethod === 'carte' ? 'carte' : 'espèces'}).`);
+});
+document.getElementById('btn-refund-cancel').addEventListener('click', () => refundModal.classList.remove('open'));
+refundModal.addEventListener('click', e => { if (e.target === refundModal) refundModal.classList.remove('open'); });
 
 // ── 🧾 Reçu client (affichage + impression) ───────────────────────────────────
 const receiptModal = document.getElementById('modal-receipt');

@@ -1021,11 +1021,32 @@ function getClosuresBackup(ss) {
 }
 
 // ════════════════════════════════════════════
+//  JETON D'ACCÈS (protection des endpoints /exec)
+// ════════════════════════════════════════════
+// Même mécanisme que le script de prod : exécute setupToken() UNE FOIS avec ton
+// jeton (puis efface la valeur) ; sans propriété POS_TOKEN, l'accès reste ouvert.
+function setupToken() {
+  const TOKEN = 'COLLE_ICI_TON_JETON';
+  PropertiesService.getScriptProperties().setProperty('POS_TOKEN', TOKEN);
+  Logger.log('Jeton enregistré dans les Script Properties. Efface la valeur ci-dessus, redéploie, puis saisis le même jeton sur chaque iPad (☰ ▸ 🛡️ Jeton Google Sheets).');
+}
+
+function tokenOk(e) {
+  const t = PropertiesService.getScriptProperties().getProperty('POS_TOKEN');
+  if (!t) return true;   // pas de jeton configuré → accès ouvert
+  return !!(e && e.parameter && e.parameter.token === t);
+}
+
+// ════════════════════════════════════════════
 //  doPost / doGet
 // ════════════════════════════════════════════
 
 function doPost(e) {
   try {
+    if (!tokenOk(e)) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'unauthorized' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     const ss    = getOrCreateSpreadsheet();
     const sheet = getOrCreateTransactionsSheet(ss);
     const data  = JSON.parse(e.postData.contents);
@@ -1084,6 +1105,13 @@ function doPost(e) {
 function doGet(e) {
   const action = e && e.parameter ? e.parameter.action : '';
   const cb     = e && e.parameter ? e.parameter.callback : '';
+
+  if (!tokenOk(e)) {
+    const err = JSON.stringify({ ok: false, error: 'unauthorized' });
+    return cb
+      ? ContentService.createTextOutput(cb + '(' + err + ')').setMimeType(ContentService.MimeType.JAVASCRIPT)
+      : ContentService.createTextOutput(err).setMimeType(ContentService.MimeType.JSON);
+  }
 
   let payload;
   if (action === 'deletelast') {

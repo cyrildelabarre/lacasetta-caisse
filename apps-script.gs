@@ -1004,11 +1004,38 @@ function getClosuresBackup(ss) {
 }
 
 // ════════════════════════════════════════════
+//  JETON D'ACCÈS (protection des endpoints /exec)
+// ════════════════════════════════════════════
+// L'URL /exec est publique (dépôt GitHub public) : sans jeton, n'importe qui
+// peut lire tout l'historique de ventes ou injecter des données.
+// 1) Choisis un jeton (longue phrase aléatoire), colle-le ci-dessous,
+//    exécute setupToken() UNE FOIS, puis EFFACE la valeur (elle est conservée
+//    dans les Script Properties privées).
+// 2) Renseigne le MÊME jeton sur chaque iPad : ☰ ▸ 🛡️ Jeton Google Sheets.
+// Tant que la propriété POS_TOKEN n'existe pas, l'accès reste ouvert
+// (compatibilité : rien ne casse avant que tu aies fait les deux étapes).
+function setupToken() {
+  const TOKEN = 'COLLE_ICI_TON_JETON';
+  PropertiesService.getScriptProperties().setProperty('POS_TOKEN', TOKEN);
+  Logger.log('Jeton enregistré dans les Script Properties. Efface la valeur ci-dessus, redéploie, puis saisis le même jeton sur chaque iPad (☰ ▸ 🛡️ Jeton Google Sheets).');
+}
+
+function tokenOk(e) {
+  const t = PropertiesService.getScriptProperties().getProperty('POS_TOKEN');
+  if (!t) return true;   // pas de jeton configuré → accès ouvert
+  return !!(e && e.parameter && e.parameter.token === t);
+}
+
+// ════════════════════════════════════════════
 //  doPost / doGet
 // ════════════════════════════════════════════
 
 function doPost(e) {
   try {
+    if (!tokenOk(e)) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'unauthorized' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     const ss    = getOrCreateSpreadsheet();
     const data  = JSON.parse(e.postData.contents);
 
@@ -1199,6 +1226,13 @@ function getAllTemperatures(ss) {
 function doGet(e) {
   const action = e && e.parameter ? e.parameter.action : '';
   const cb     = e && e.parameter ? e.parameter.callback : '';
+
+  if (!tokenOk(e)) {
+    const err = JSON.stringify({ ok: false, error: 'unauthorized' });
+    return cb
+      ? ContentService.createTextOutput(cb + '(' + err + ')').setMimeType(ContentService.MimeType.JAVASCRIPT)
+      : ContentService.createTextOutput(err).setMimeType(ContentService.MimeType.JSON);
+  }
 
   let payload;
   if (action === 'deletelast') {

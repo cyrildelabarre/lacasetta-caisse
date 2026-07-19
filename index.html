@@ -447,6 +447,7 @@
         <button class="menu-item" id="menu-sync">🔄 Synchroniser<small>Ventes, catalogue, relevés</small></button>
         <button class="menu-item" id="menu-purge">🧹 Purger les ventes locales<small>Déjà dans Google Sheets, hors aujourd'hui</small></button>
         <button class="menu-item" id="menu-pin">🔑 Code PIN<small>Changer le code</small></button>
+        <button class="menu-item" id="menu-token">🛡️ Jeton Google Sheets<small>Protège l'accès aux données de vente</small></button>
         <button class="menu-item menu-item-test" id="menu-testmode">🧪 Mode formation<small>Ventes de test isolées, non comptées</small></button>
       </div>
       <button class="btn-secondary" id="btn-menu-close" style="width:100%;margin-top:1rem">Fermer</button>
@@ -664,6 +665,25 @@
         <button class="btn-primary" id="btn-closure-save">💾 Clôturer la journée</button>
       </div>
       <div id="closure-history" class="closure-history"></div>
+    </div>
+  </div>
+
+  <!-- Modal remboursement (retirer / rembourser des articles d'une vente payée) -->
+  <div class="modal-overlay" id="modal-refund">
+    <div class="modal" style="max-width:440px">
+      <h3>↩ Rembourser des articles</h3>
+      <p class="label" id="refund-orig"></p>
+      <div id="refund-lines"></div>
+      <div class="ticket-total" style="margin-top:.6rem"><span>À rembourser</span><span id="refund-total">0,00 €</span></div>
+      <p class="label">Remboursé en</p>
+      <div class="payment-btns" id="refund-method">
+        <button class="pay-btn" data-method="especes">💶 Espèces</button>
+        <button class="pay-btn" data-method="carte">💳 Carte</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-refund-cancel">Fermer</button>
+        <button class="btn-danger" id="btn-refund-save">↩ Rembourser</button>
+      </div>
     </div>
   </div>
 
