@@ -291,12 +291,18 @@ let txsRev = 0;   // incrémenté à chaque écriture locale — invalide le cac
 function saveTransactions(txs) { txsRev++; return LS.set(txKey(), txs); }
 
 function addTransaction(tx) {
+  // Une vente créée SANS jeton sur l'appareil ne sera JAMAIS envoyée à Google
+  // Sheets, même si un jeton est saisi plus tard : seuls les appareils
+  // autorisés AVANT la vente alimentent la prod. Marquage définitif.
+  if (!sheetsToken()) tx.localOnly = true;
   const txs = getTransactions();
   txs.push(tx);
   if (saveTransactions(txs)) return;
   // Stockage plein : purge d'urgence des ventes des jours précédents déjà dans
   // Google Sheets (mêmes règles que le bouton du menu ☰), puis nouvel essai.
-  const keep = txs.filter(t => !t.synced || localDayOf(t.date) >= todayISO());
+  // (Les ventes « localOnly » d'avant aujourd'hui sont purgeables : elles ne
+  // partiront jamais vers le Sheet.)
+  const keep = txs.filter(t => (!t.synced && !t.localOnly) || localDayOf(t.date) >= todayISO());
   if (keep.length < txs.length && saveTransactions(keep)) {
     showToast('⚠️ Stockage plein : anciennes ventes purgées automatiquement (elles restent dans Google Sheets).');
     return;
@@ -330,6 +336,7 @@ function saveArticles() {
 // Envoie tout le catalogue au Google Sheet (avec reprise si hors-ligne).
 async function pushCatalogue() {
   setCataloguePushPending(true);   // levé AVANT l'envoi : survit à une fermeture en plein vol
+  if (!sheetsToken()) return;      // sans jeton : aucun envoi, partira une fois le jeton saisi
   const payload = {
     catalogue: articles.map((a, i) => ({
       id: a.id, name: a.name, category: a.category,
@@ -468,7 +475,8 @@ let isFlushingCancels = false;
 function flushPendingCancels() {
   if (isFlushingCancels) return;
   const q = getPendingCancels();
-  if (!q.length || !sheetsUrl()) return;
+  // Sans jeton, aucun envoi : les annulations restent en file sur l'appareil.
+  if (!q.length || !sheetsUrl() || !sheetsToken()) return;
   isFlushingCancels = true;
   const id = q[0];
   cancelOnSheets(id, (ok, cancelled) => {
@@ -483,7 +491,7 @@ function flushPendingCancels() {
 // Marque le ticket « Annulé » dans le Google Sheet (via JSONP).
 // done(ok, cancelled) : ok = réponse valide reçue ; cancelled = lignes modifiées.
 function cancelOnSheets(id, done) {
-  if (!sheetsUrl()) { done(false, 0); return; }
+  if (!sheetsUrl() || !sheetsToken()) { done(false, 0); return; }
   const cbName = '__cancelCb' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
   let script, finished = false;
   const finish = (ok, cancelled) => {
@@ -1056,6 +1064,7 @@ function tempPayload() {
   return { tempSync: { enclosure: e ? e.name : tempEnc, type: e ? e.type : 'frigo', month: tempMonth, days } };
 }
 function pushTemperatures() {
+  if (!sheetsToken()) return;   // sans jeton : aucun envoi
   const p = tempPayload();
   if (!p.tempSync.days.length) return;
   fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify(p) }).catch(() => {});
@@ -1152,6 +1161,7 @@ document.getElementById('menu-temp').addEventListener('click', () => { closeMenu
 // ── Synchronisation manuelle (bouton du menu) ─────────────────────────────────
 // Pousse tous les relevés de température locaux vers Google Sheets.
 function pushAllTemperatures() {
+  if (!sheetsToken()) return;   // sans jeton : aucun envoi
   const all = LS.get('pos_temp_records', {});
   Object.keys(all).forEach(key => {
     const sep = key.lastIndexOf('|');
@@ -1174,6 +1184,11 @@ function pushAllTemperatures() {
 
 // Échange complet à la demande : envoie ET récupère ventes, catalogue, relevés.
 async function syncAll() {
+  if (!sheetsToken()) {
+    setSyncStatus('token');
+    showToast('🛡️ Aucun jeton Google Sheets sur cet appareil — rien n\'est envoyé ni reçu. Saisissez-le via ☰ ▸ 🛡️ Jeton Google Sheets.');
+    return;
+  }
   showToast('🔄 Synchronisation en cours…');
   if (isCataloguePushPending()) pushCatalogue();
   pullCatalogue();                        // récupère le catalogue partagé
@@ -1185,7 +1200,7 @@ async function syncAll() {
   // Envoi des ventes : on attend le résultat RÉEL au lieu d'afficher un
   // « ✅ » optimiste après 3 secondes quel que soit le sort des requêtes.
   await syncToSheets();
-  const pendingTx      = getTransactions().filter(t => !t.synced).length;
+  const pendingTx      = getTransactions().filter(t => !t.synced && !t.localOnly).length;
   const pendingCancels = getPendingCancels().length;
   if (!pendingTx && !pendingCancels) showToast('✅ Ventes synchronisées avec Google Sheets.');
   else showToast(`⚠️ Synchronisation incomplète : ${pendingTx + pendingCancels} élément(s) en attente — vérifiez le réseau.`);
@@ -1200,13 +1215,15 @@ document.getElementById('menu-sync').addEventListener('click', () => { closeMenu
 async function purgeLocalSales() {
   const txs   = getTransactions();
   const today = todayISO();
-  const keep  = txs.filter(t => !t.synced || localDayOf(t.date) >= today);
+  // Purgeables : ventes d'avant aujourd'hui déjà dans Sheets, ET ventes
+  // « localOnly » (créées sans jeton — elles ne partiront jamais vers Sheets).
+  const keep  = txs.filter(t => (!t.synced && !t.localOnly) || localDayOf(t.date) >= today);
   const removed = txs.length - keep.length;
   if (!removed) {
     showToast('Rien à purger : toutes les ventes locales sont du jour ou en attente de sync.');
     return;
   }
-  const pending = txs.filter(t => !t.synced).length;
+  const pending = txs.filter(t => !t.synced && !t.localOnly).length;
   let msg = `Supprimer ${removed} vente(s) locale(s) déjà enregistrée(s) dans Google Sheets ?\n\n`
     + 'Les rapports continueront de les afficher (chargées depuis le Sheet). '
     + 'Les ventes du jour et celles en attente de synchronisation sont conservées.';
@@ -1224,7 +1241,12 @@ document.getElementById('menu-token').addEventListener('click', async () => {
   if (t === null) return;   // annulé
   if (t) localStorage.setItem('pos_sheets_token', t);
   else   localStorage.removeItem('pos_sheets_token');
-  showToast(t ? '🛡️ Jeton enregistré — envoyé avec chaque synchronisation.' : 'Jeton retiré.');
+  tokenRejectedNotified = false;   // nouvelle alerte possible si le nouveau jeton est aussi refusé
+  showToast(t ? '🛡️ Jeton enregistré — envoyé avec chaque synchronisation.'
+              : '🛡️ Jeton retiré — plus AUCUN envoi vers Google Sheets depuis cet appareil.');
+  // Rattrapage immédiat : tout ce qui attendait (ventes, annulations, sauvegardes)
+  // part dès que le jeton est en place.
+  if (t) { syncToSheets(); flushPendingCancels(); flushDirtyBackups(); }
 });
 document.getElementById('temp-month').addEventListener('change', e => { tempMonth = e.target.value || tempMonth; loadTempInto(); });
 document.getElementById('temp-month-prev').addEventListener('click', () => shiftTempMonth(-1));
@@ -2281,6 +2303,7 @@ function renderMemo() {
       + (tx.employee ? `<span class="memo-emp">🧑‍🍳 ${escapeHtml(tx.employee)}</span> · ` : '')
       + (tx.complementOf ? '🔁 <em>complément</em> · ' : '')
       + (tx.refundOf ? '↩ <em>remboursement</em> · ' : '')
+      + (tx.localOnly ? '🛡️ <em>hors sync (créée sans jeton)</em> · ' : '')
       + (tx.discount && tx.discount.amount ? `🏷️ <em>remise −${fmtEur(tx.discount.amount)}</em> · ` : '')
       + tx.lines.map(l => `${emojiFor(l)}${escapeHtml(l.name)} ×${Math.abs(l.qty)}`).join(', ');
     const badge = tx.cancelled
@@ -3690,8 +3713,18 @@ const syncIndicator = (() => {
 })();
 
 function setSyncStatus(state) {
-  const map = { idle: '', syncing: '🔄 Sync...', ok: '✅ Sync OK', error: '⚠️ Hors ligne' };
+  const map = { idle: '', syncing: '🔄 Sync...', ok: '✅ Sync OK', error: '⚠️ Hors ligne',
+                token: '🛡️ Jeton requis', tokenko: '🛡️ Jeton refusé' };
   syncIndicator.textContent = map[state] ?? '';
+}
+
+// Alerte (une seule fois par session) quand le serveur refuse le jeton :
+// les données restent sur l'appareil, rien n'est perdu.
+let tokenRejectedNotified = false;
+function notifyTokenRejected() {
+  if (tokenRejectedNotified) return;
+  tokenRejectedNotified = true;
+  showToast('🛡️ Jeton Google Sheets refusé — aucune donnée envoyée, tout reste sur cet appareil. Vérifiez ☰ ▸ 🛡️ Jeton Google Sheets.');
 }
 
 // Marque une transaction comme synchronisée
@@ -3707,10 +3740,14 @@ function markSynced(ids) {
 let isSyncing = false;
 async function syncToSheets() {
   if (isSyncing) return;
-  const pending = getTransactions().filter(t => !t.synced);
+  // Jamais d'envoi des ventes « localOnly » (créées sans jeton sur l'appareil).
+  const pending = getTransactions().filter(t => !t.synced && !t.localOnly);
   if (!pending.length) { setSyncStatus('idle'); return; }
   // Mode formation sans backend de test : on garde les ventes en local, pas d'envoi.
   if (!sheetsUrl()) { setSyncStatus('idle'); return; }
+  // Pas de jeton sur cet appareil = AUCUN envoi (ventes annulées comprises) :
+  // tout reste local jusqu'à la saisie du jeton (☰ ▸ 🛡️ Jeton Google Sheets).
+  if (!sheetsToken()) { setSyncStatus('token'); return; }
 
   isSyncing = true;
   setSyncStatus('syncing');
@@ -3724,6 +3761,10 @@ async function syncToSheets() {
       markSynced(pending.map(t => t.id));
       setSyncStatus('ok');
       setTimeout(() => setSyncStatus('idle'), 3000);
+    } else if (json.error === 'unauthorized') {
+      // Jeton refusé par le serveur : les ventes restent locales, on prévient.
+      setSyncStatus('tokenko');
+      notifyTokenRejected();
     } else {
       setSyncStatus('error');
     }
@@ -3753,7 +3794,7 @@ window.addEventListener('online', () => {
 // catalogue, des annulations ou des sauvegardes en attente. (« online » est peu
 // fiable sur iOS Safari.)
 setInterval(() => {
-  if (getTransactions().some(t => !t.synced)) syncToSheets();
+  if (getTransactions().some(t => !t.synced && !t.localOnly)) syncToSheets();
   if (isCataloguePushPending()) pushCatalogue();
   if (getPendingCancels().length) flushPendingCancels();
   flushDirtyBackups();
@@ -4119,18 +4160,22 @@ closureModal.addEventListener('click', e => { if (e.target === closureModal) clo
 
 function pushClients() {
   LS.set('pos_clients_dirty', true);
+  if (!sheetsToken()) return;   // sans jeton : aucun envoi, partira une fois le jeton saisi
   fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ clientsSync: clients }) })
     .then(r => r.json())
-    .then(j => { if (j && j.ok) LS.set('pos_clients_dirty', false); })
+    .then(j => { if (j && j.ok) LS.set('pos_clients_dirty', false);
+                 else if (j && j.error === 'unauthorized') notifyTokenRejected(); })
     .catch(() => {});
 }
 
 function pushClosures() {
   if (isTestMode()) return;   // les clôtures de formation restent locales
   LS.set('pos_closures_dirty', true);
+  if (!sheetsToken()) return;   // sans jeton : aucun envoi, partira une fois le jeton saisi
   fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ closuresSync: getClosures() }) })
     .then(r => r.json())
-    .then(j => { if (j && j.ok) LS.set('pos_closures_dirty', false); })
+    .then(j => { if (j && j.ok) LS.set('pos_closures_dirty', false);
+                 else if (j && j.error === 'unauthorized') notifyTokenRejected(); })
     .catch(() => {});
 }
 
