@@ -7,7 +7,7 @@
     --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   @media (prefers-color-scheme:dark){:root{
-    --ground:#15100E; --surface:#20191500; --surface-2:#241C17; --chip:#2C221B;
+    --ground:#15100E; --surface:#201915; --surface-2:#241C17; --chip:#2C221B;
     --ink:#F1E7DB; --muted:#A99A8C; --hair:#372B23;
     --clay:#E0743E; --clay-ink:#F0B492; --olive:#A7BB74; --gold:#E0A852;
   }}
@@ -15,41 +15,58 @@
   :root[data-theme="dark"]{--ground:#15100E;--surface:#201915;--surface-2:#241C17;--chip:#2C221B;--ink:#F1E7DB;--muted:#A99A8C;--hair:#372B23;--clay:#E0743E;--clay-ink:#F0B492;--olive:#A7BB74;--gold:#E0A852;}
 
   *{box-sizing:border-box}
-  .doc{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.55;
-    padding:clamp(20px,4vw,44px);-webkit-font-smoothing:antialiased}
+  .doc{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    padding:clamp(20px,4vw,44px);max-width:980px;margin:0 auto;-webkit-font-smoothing:antialiased}
   .head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;justify-content:space-between;
-    border-bottom:2px solid var(--clay);padding-bottom:18px;margin-bottom:26px}
+    border-bottom:2px solid var(--clay);padding-bottom:18px;margin-bottom:22px}
   .brand{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--clay);font-weight:700;margin:0}
   h1{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4.5vw,42px);line-height:1.03;margin:.25em 0 .1em;letter-spacing:-.01em}
-  .sub{color:var(--muted);font-size:14px;margin:0;max-width:52ch}
+  .sub{color:var(--muted);font-size:14px;margin:0;max-width:56ch}
   .stamp{font-size:12px;color:var(--muted);text-align:right;line-height:1.6}
   .stamp b{color:var(--ink)}
   .stamp .v{display:inline-block;background:var(--surface-2);border:1px solid var(--hair);border-radius:999px;padding:2px 10px;margin-top:4px;color:var(--clay-ink);font-weight:600}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
-  .card{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:18px 20px;break-inside:avoid}
-  .card h2{font-family:var(--serif);font-size:19px;font-weight:600;margin:0 0 2px;letter-spacing:0;display:flex;align-items:baseline;gap:10px}
-  .card h2 .no{font-size:12px;font-family:var(--sans);font-weight:700;color:var(--clay);letter-spacing:.08em;
-    background:var(--chip);border-radius:6px;padding:2px 7px}
-  .card .lead{font-size:12.5px;color:var(--muted);margin:0 0 12px}
-  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
-  li{font-size:13.5px;padding-left:16px;position:relative}
-  li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--clay)}
-  li b{font-weight:600}
-  li .d{color:var(--muted)}
+  .toc{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px 20px;margin-bottom:22px;font-size:13.5px}
+  .toc b{display:block;margin-bottom:6px;font-family:var(--serif);font-size:16px}
+  .toc ol{margin:0;padding-left:0;columns:2;column-gap:28px;list-style:none}
+  .toc li{margin:3px 0;break-inside:avoid}
+  .toc .n{color:var(--clay);font-weight:700;margin-right:6px;font-size:12px}
+
+  .sec{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:20px 24px;margin-bottom:18px;break-inside:avoid-page}
+  .sec h2{font-family:var(--serif);font-size:22px;font-weight:600;margin:0 0 4px;display:flex;align-items:baseline;gap:10px}
+  .sec h2 .no{font-size:12px;font-family:var(--sans);font-weight:700;color:var(--clay);letter-spacing:.08em;background:var(--chip);border-radius:6px;padding:2px 8px}
+  .sec .lead{font-size:13px;color:var(--muted);margin:0 0 14px}
+  .sec h3{font-size:15px;font-weight:700;margin:18px 0 6px;color:var(--clay-ink)}
+  .sec h3:first-of-type{margin-top:8px}
+  .sec p{font-size:13.5px;margin:6px 0}
+  .sec .d{color:var(--muted)}
+
+  ol.steps{margin:6px 0 4px;padding-left:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:7px}
+  ol.steps li{font-size:13.5px;counter-increment:st;padding-left:30px;position:relative}
+  ol.steps li::before{content:counter(st);position:absolute;left:0;top:1px;width:20px;height:20px;border-radius:50%;
+    background:var(--chip);color:var(--clay-ink);font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1px solid var(--hair)}
+  ul.pts{list-style:none;margin:6px 0 4px;padding:0;display:flex;flex-direction:column;gap:7px}
+  ul.pts li{font-size:13.5px;padding-left:16px;position:relative}
+  ul.pts li::before{content:"";position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--clay)}
+
   .chip{display:inline-block;background:var(--chip);border:1px solid var(--hair);border-radius:6px;
     padding:1px 7px;font-size:12.5px;font-weight:600;color:var(--clay-ink);white-space:nowrap}
-  .tip li::before{background:var(--olive)}
+  .chip.tst{background:transparent;border-style:dashed;color:var(--olive)}
+  .note{background:var(--surface-2);border:1px solid var(--hair);border-radius:10px;padding:9px 13px;font-size:13px;margin:10px 0}
+  .note.warn{border-left:4px solid var(--gold)}
+  .note.good{border-left:4px solid var(--olive)}
 
-  .foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--muted)}
-  .foot .note{display:inline-block;background:var(--surface-2);border:1px solid var(--hair);border-radius:8px;padding:8px 12px;color:var(--ink)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+  th{text-align:left;background:var(--surface-2);padding:7px 10px;border:1px solid var(--hair);font-weight:700}
+  td{padding:7px 10px;border:1px solid var(--hair);vertical-align:top}
+
+  .foot{margin-top:24px;padding-top:16px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--muted)}
   .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px}
   .legend span{display:flex;align-items:center;gap:6px}
-  .dot{width:8px;height:8px;border-radius:50%}
 
   @media print{
     :root{--ground:#fff;--surface:#fff;--surface-2:#F4EDE3;--ink:#231D19;--muted:#6B5F54;--hair:#D8CCBD;--clay:#93400F;--clay-ink:#7A3410;--chip:#F4EDE3}
-    @page{margin:11mm}.doc{padding:0}.card{break-inside:avoid}
+    @page{margin:11mm}.doc{padding:0;max-width:none}.sec{break-inside:avoid}
   }
 </style>
 
@@ -57,143 +74,305 @@
   <header class="head">
     <div>
       <p class="brand">🍕 La Casetta · Camion pizza</p>
-      <h1>Notice de la caisse</h1>
-      <p class="sub">Guide de référence et de formation — toutes les fonctions de l'application d'encaissement.</p>
+      <h1>Guide complet de la caisse</h1>
+      <p class="sub">Toutes les actions possibles, expliquées pas à pas — pour l'encaissement quotidien comme pour la gestion.</p>
     </div>
     <div class="stamp">
-      Dernière mise à jour<br><b>12 juillet 2026</b>
-      <div class="v">v1.1</div>
+      Dernière mise à jour<br><b>19 juillet 2026</b>
+      <div class="v">v2.0</div>
     </div>
   </header>
 
-  <div class="grid">
+  <nav class="toc">
+    <b>Sommaire</b>
+    <ol>
+      <li><span class="n">01</span>Déverrouiller &amp; sécurité d'accès</li>
+      <li><span class="n">02</span>L'écran Caisse : encaisser une vente</li>
+      <li><span class="n">03</span>Offrir, fidélité, remises, attente</li>
+      <li><span class="n">04</span>Mémo du jour : reçu, complément, remboursement, annulation</li>
+      <li><span class="n">05</span>Clients &amp; carte de fidélité</li>
+      <li><span class="n">06</span>Employés &amp; planning horaires</li>
+      <li><span class="n">07</span>Gérer le catalogue (menu ☰)</li>
+      <li><span class="n">08</span>Relevés de température (HACCP)</li>
+      <li><span class="n">09</span>Clôture de caisse</li>
+      <li><span class="n">10</span>Tableau de bord &amp; Reporting</li>
+      <li><span class="n">11</span>Synchronisation, jeton 🛡️ &amp; entretien</li>
+      <li><span class="n">12</span>Mode formation</li>
+      <li><span class="n">13</span>Côté Google Sheet</li>
+      <li><span class="n">14</span>Dépannage express</li>
+    </ol>
+  </nav>
 
-    <section class="card">
-      <h2><span class="no">01</span> Connexion &amp; sécurité</h2>
-      <p class="lead">Protéger l'accès à la caisse.</p>
-      <ul>
-        <li><b>Code PIN</b> <span class="d">— 4 chiffres à l'ouverture.</span></li>
-        <li><b>Verrouiller</b> <span class="chip">🔒</span> <span class="d">à tout moment.</span></li>
-        <li><b>Changer le PIN</b> <span class="d">— via le menu</span> <span class="chip">☰</span></li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">01</span> Déverrouiller &amp; sécurité d'accès</h2>
+    <h3>Ouvrir la caisse</h3>
+    <ol class="steps">
+      <li>Touche les chiffres du <b>code PIN</b> (4 chiffres). <span class="chip">⌫</span> efface le dernier chiffre.</li>
+      <li>Au 4ᵉ chiffre, la caisse s'ouvre toute seule si le code est bon.</li>
+    </ol>
+    <div class="note warn">⏳ <b>5 codes faux d'affilée</b> = clavier bloqué 30 secondes (même si on recharge la page). Le code n'est jamais stocké en clair sur l'appareil.</div>
+    <h3>Verrouiller en cours de service</h3>
+    <p>Touche <span class="chip">🔒 Verrouiller</span> en haut à droite — l'écran PIN revient. Rien n'est perdu : le ticket en cours reste tel quel.</p>
+    <h3>Changer le code PIN</h3>
+    <ol class="steps">
+      <li><span class="chip">☰ Menu</span> ▸ <span class="chip">🔑 Code PIN</span>.</li>
+      <li>Saisis le code actuel, puis deux fois le nouveau (4 chiffres).</li>
+      <li><span class="chip">Enregistrer</span>.</li>
+    </ol>
+  </section>
 
-    <section class="card">
-      <h2><span class="no">02</span> Encaisser une vente</h2>
-      <p class="lead">Le cœur de la caisse.</p>
-      <ul>
-        <li><b>Catalogue par catégories</b> <span class="d">— touche un article pour l'ajouter.</span></li>
-        <li><b>Panier</b> <span class="d">— quantité +/−, retirer, « Vider ».</span></li>
-        <li><b>Paiement</b> <span class="chip">💶 Espèces</span> <span class="chip">💳 Carte</span></li>
-        <li><b>Rendu monnaie</b> <span class="d">— saisis le montant remis, le rendu s'affiche.</span></li>
-        <li><b>Valider le paiement</b> <span class="d">— enregistre la vente.</span></li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">02</span> L'écran Caisse : encaisser une vente</h2>
+    <p class="lead">L'onglet <span class="chip">Caisse</span> — catalogue à gauche, ticket à droite.</p>
 
-    <section class="card">
-      <h2><span class="no">03</span> Remises &amp; offres</h2>
-      <p class="lead">Offrir des articles proprement.</p>
-      <ul>
-        <li><span class="chip">🎁 Offrir</span> <span class="d">— active le mode, puis touche les articles à passer à 0 €.</span></li>
-        <li><span class="chip">🍕 Fidélité</span> <span class="d">— offre la pizza la moins chère du panier.</span></li>
-        <li><b>Traçable</b> <span class="d">— les articles offerts sont enregistrés à 0 € (le CA reste juste).</span></li>
-      </ul>
-    </section>
+    <h3>Avant le service : emplacement et employé</h3>
+    <ul class="pts">
+      <li><span class="chip">📍</span> <b>Emplacement</b> — détecté automatiquement selon le jour (Feings le lundi, Thenay le mardi…). Pour changer : touche 📍, choisis un des 5 lieux ou saisis un lieu libre, puis <span class="chip">Valider</span>. Il est enregistré sur chaque vente.</li>
+      <li><span class="chip">👤</span> <b>Employé en poste</b> — touche le bouton en haut pour changer la personne qui encaisse (enregistrée sur chaque vente). Chaque matin, la caisse revient à l'employé par défaut ⭐.</li>
+    </ul>
 
-    <section class="card">
-      <h2><span class="no">04</span> Rouvrir / compléter une vente</h2>
-      <p class="lead">Le client ajoute après avoir payé.</p>
-      <ul>
-        <li>Dans le <b>Mémo</b>, bouton <span class="chip">🔁</span> sur la vente.</li>
-        <li>Ajoute les nouveaux articles au panier.</li>
-        <li><b>Encaisse le complément</b> <span class="d">— seul le montant des nouveaux articles est demandé.</span></li>
-        <li>La vente d'origine reste intacte ; le complément a son propre paiement.</li>
-      </ul>
-    </section>
+    <h3>Composer le ticket</h3>
+    <ol class="steps">
+      <li>Choisis une <b>catégorie</b> (Petite, Grande, Supp, Desserts, Boissons…).</li>
+      <li><b>Touche un article</b> pour l'ajouter au ticket. Retouche-le pour augmenter la quantité.</li>
+      <li>Dans le ticket : <span class="chip">−</span>/<span class="chip">+</span> ajuste la quantité d'une ligne, <span class="chip">✕</span> la retire.</li>
+      <li><span class="chip">Vider</span> efface tout le ticket — un bouton <span class="chip">↩ Annuler</span> s'affiche 5 secondes pour tout restaurer en cas d'erreur.</li>
+    </ol>
+    <p class="d">Un article marqué ⛔ (épuisé du jour) apparaît grisé et ne peut pas être ajouté.</p>
 
-    <section class="card">
-      <h2><span class="no">05</span> Menu <span class="chip">☰</span> — gérer le catalogue</h2>
-      <p class="lead">Toutes les fonctions de gestion, réunies dans le menu (en haut à droite).</p>
-      <ul>
-        <li><b>✏️ Modifier un article</b> <span class="d">— puis touche l'article à changer / supprimer.</span></li>
-        <li><b>🔀 Déplacer les articles</b> <span class="d">— glisser-déposer, puis « ✅ Terminer ».</span></li>
-        <li><b>🗂 Gérer les catégories</b> <span class="d">— réorganiser (▲▼) et renommer.</span></li>
-        <li><b>🔑 Changer le code PIN</b></li>
-        <li><b>➕ Ajouter un article</b> <span class="d">— créer un nouvel article du catalogue.</span></li>
-      </ul>
-    </section>
+    <h3>Encaisser</h3>
+    <ol class="steps">
+      <li>Choisis le mode de paiement : <span class="chip">💶 Espèces</span>, <span class="chip">💳 Carte</span> ou <span class="chip tst">💶+💳 Mixte 🧪</span>.</li>
+      <li><b>Espèces</b> : saisis le montant remis par le client (la virgule est acceptée : « 12,50 ») — le <b>rendu monnaie</b> s'affiche automatiquement.</li>
+      <li><b>Mixte 🧪</b> : saisis la part payée en espèces — la part carte se calcule toute seule.</li>
+      <li>Touche <span class="chip">✔ Valider le paiement</span> — la vente est enregistrée et part vers Google Sheets.</li>
+    </ol>
+    <div class="note good">✅ La vente est conservée sur l'iPad même sans réseau, et envoyée automatiquement dès le retour du WiFi. Si la mémoire de l'appareil est pleine, la caisse fait de la place toute seule — et si elle n'y arrive pas, elle te prévient bruyamment et garde le ticket à l'écran (jamais de vente perdue en silence).</div>
+  </section>
 
-    <section class="card">
-      <h2><span class="no">06</span> Emplacement</h2>
-      <p class="lead">Où est le camion ce jour-là.</p>
-      <ul>
-        <li><b>Détecté automatiquement</b> <span class="d">— selon le calendrier hebdo (lun→ven).</span></li>
-        <li><span class="chip">📍</span> <b>Choix manuel</b> parmi les 5 lieux + saisie libre.</li>
-        <li>Enregistré sur <b>chaque vente</b> (sert au CA par emplacement).</li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">03</span> Offrir, fidélité, remises, attente</h2>
+    <h3>🎁 Offrir un article</h3>
+    <ol class="steps">
+      <li>Touche <span class="chip">🎁 Offrir</span> — le mode s'active.</li>
+      <li>Touche les articles du ticket à passer à 0 €.</li>
+      <li>Retouche <span class="chip">🎁 Offrir</span> pour quitter le mode.</li>
+    </ol>
+    <p class="d">Les articles offerts sont enregistrés à 0 € avec la mention « (offert) » : le chiffre d'affaires reste juste et l'offert est traçable.</p>
+    <h3>🍕 Fidélité (pizza offerte)</h3>
+    <p>Quand un client associé au ticket a une récompense disponible, touche <span class="chip">🍕 Fidélité</span> : la <b>pizza la moins chère du panier</b> passe à 0 € et la récompense est décomptée.</p>
+    <h3>🏷️ Remise sur le ticket <span class="chip tst">🧪</span></h3>
+    <ol class="steps">
+      <li>Touche <span class="chip tst">🏷️ Remise</span>, choisis <b>%</b> ou <b>€</b>, saisis la valeur (aperçu immédiat).</li>
+      <li><span class="chip">Appliquer</span>. Pour la retirer : le <span class="chip">✕</span> de la ligne remise, ou <span class="chip">✕ Retirer</span> dans le modal.</li>
+    </ol>
+    <p class="d">La remise est répartie sur les articles payés, pour que les rapports par catégorie restent cohérents.</p>
+    <h3>⏸ Tickets en attente <span class="chip tst">🧪</span></h3>
+    <ol class="steps">
+      <li>Ticket en cours ? Touche <span class="chip tst">⏸ Attente</span> ▸ <b>Mettre de côté</b>, donne-lui un nom (« Marc 19h30 »).</li>
+      <li>Pour le reprendre : <span class="chip tst">⏸ Attente</span> ▸ touche <b>Reprendre</b> sur le ticket voulu — il revient tel quel, prêt à encaisser.</li>
+      <li>Un ticket en attente peut aussi être supprimé (avec confirmation).</li>
+    </ol>
+  </section>
 
-    <section class="card">
-      <h2><span class="no">07</span> Mémo du jour</h2>
-      <p class="lead">Le détail des ventes par date.</p>
-      <ul>
-        <li><b>Sélecteur de date</b> <span class="d">— choisis n'importe quel jour.</span></li>
-        <li><b>Récap</b> <span class="d">— nb tickets, CA, espèces, carte.</span></li>
-        <li><b>Liste des tickets</b> + bouton rouvrir 🔁</li>
-        <li>Données <b>local + Google Sheets</b> fusionnées.</li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">04</span> Mémo du jour : reçu, complément, remboursement, annulation</h2>
+    <p class="lead">L'onglet <span class="chip">Mémo du jour</span> — toutes les ventes d'une date, avec les actions de correction.</p>
+    <h3>Consulter</h3>
+    <ul class="pts">
+      <li><b>Sélecteur de date</b> — n'importe quel jour, y compris l'historique complet venu de Google Sheets.</li>
+      <li><b>Récap</b> — nombre de tickets, CA du jour, total espèces, total carte (les paiements mixtes sont ventilés exactement).</li>
+      <li><span class="chip">⬇ Exporter CSV</span> — la journée complète en un fichier.</li>
+    </ul>
+    <h3>🧾 Reçu client <span class="chip tst">🧪</span></h3>
+    <p>Bouton <span class="chip tst">🧾</span> sur la ligne : affiche un reçu propre (logo, articles, total, paiement) avec <span class="chip">🖨️ Imprimer</span>.</p>
+    <h3>🔁 Complément — le client ajoute après avoir payé</h3>
+    <ol class="steps">
+      <li>Touche <span class="chip">🔁 Complément</span> sur la vente d'origine (le ticket en cours doit être vide).</li>
+      <li>Un bandeau rappelle la vente déjà payée. Ajoute les <b>nouveaux</b> articles.</li>
+      <li>Encaisse normalement : seul le montant des nouveautés est demandé. La vente d'origine reste intacte ; le complément lui est lié.</li>
+      <li>Pour abandonner : <span class="chip">✕ Annuler</span> dans le bandeau.</li>
+    </ol>
+    <h3>↩ Rembourser tout ou partie d'une vente</h3>
+    <ol class="steps">
+      <li>Touche <span class="chip">↩</span> sur la ligne de la vente.</li>
+      <li>Pour chaque article, choisis la quantité à rembourser avec <span class="chip">−</span>/<span class="chip">+</span> (plafonnée à ce qui n'a pas déjà été remboursé). Le montant se calcule au <b>prix réellement payé</b>, remises comprises.</li>
+      <li>Choisis le mode de remboursement : <span class="chip">💶 Espèces</span> ou <span class="chip">💳 Carte</span> (pré-réglé sur le mode d'origine).</li>
+      <li>Touche <span class="chip">↩ Rembourser</span>. Un ticket négatif lié apparaît dans le mémo — rapports, clôture et Google Sheets se corrigent automatiquement, et les pizzas remboursées sont retirées de la fidélité du client.</li>
+    </ol>
+    <h3>🗑️ Annuler une vente entière</h3>
+    <ol class="steps">
+      <li><b>Glisse la ligne vers la gauche</b> (ou touche directement 🗑️).</li>
+      <li>Confirme dans la fenêtre « Annuler la transaction ? ».</li>
+      <li>La vente passe en <b>Annulé</b> partout : elle reste visible barrée, mais sort de tous les totaux. Sa fidélité est décomptée. L'annulation atteint Google Sheets même si le WiFi est coupé à ce moment-là (file d'attente avec renvoi automatique).</li>
+    </ol>
+  </section>
 
-    <section class="card">
-      <h2><span class="no">08</span> Tableau de bord</h2>
-      <p class="lead">Vue visuelle de l'activité.</p>
-      <ul>
-        <li><b>KPI</b> <span class="d">— CA, tickets, panier moyen, CA/jour.</span></li>
-        <li><b>Graphiques</b> <span class="d">— par jour, par heure (pic), emplacement, catégorie, paiements, attache, top pizzas.</span></li>
-        <li><b>Périodes</b> <span class="chip">Aujourd'hui</span> <span class="chip">7 j</span> <span class="chip">30 j</span> <span class="chip">Tout</span></li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">05</span> Clients &amp; carte de fidélité</h2>
+    <p class="lead">Onglet <span class="chip">👥 Clients</span> (via ☰) et bouton <span class="chip">👤 Associer un client</span> du ticket.</p>
+    <h3>Associer un client à une vente</h3>
+    <ol class="steps">
+      <li>Avant de valider le paiement, touche <span class="chip">👤 Associer un client</span>.</li>
+      <li>Recherche par nom ou téléphone, ou crée la fiche avec <span class="chip">➕ Nouveau</span>.</li>
+      <li>Le bouton affiche alors son avancement fidélité (« 7/10 🍕 ») ou ses récompenses disponibles (« 🎁 1 pizza offerte dispo »).</li>
+      <li><span class="chip">✕ Retirer</span> dissocie le client du ticket en cours.</li>
+    </ol>
+    <h3>Règles de fidélité</h3>
+    <ul class="pts">
+      <li><b>10 pizzas achetées = 1 pizza offerte</b>, à appliquer avec <span class="chip">🍕 Fidélité</span>.</li>
+      <li>Le compteur avance à chaque vente validée avec client associé — et <b>recule</b> si la vente est annulée ou remboursée : impossible de gonfler la fidélité.</li>
+    </ul>
+    <h3>Gérer les fiches (onglet Clients)</h3>
+    <ul class="pts">
+      <li><span class="chip">➕ Nouveau client</span> — nom (obligatoire), téléphone, notes.</li>
+      <li><b>Touche une fiche</b> — détail : fidélité, statistiques (visites, total dépensé, dernière visite) et historique complet de ses ventes.</li>
+      <li><span class="chip">✏️ Modifier</span> / <span class="chip">🗑 Supprimer</span> (avec confirmation ; les ventes passées sont conservées).</li>
+      <li><span class="chip">⬇ Exporter CSV</span> — toute la base clients.</li>
+    </ul>
+    <div class="note good">☁️ Les fiches sont <b>sauvegardées automatiquement</b> dans l'onglet « 👤 Clients » du Google Sheet, et <b>restaurées automatiquement</b> sur un iPad neuf ou réinitialisé.</div>
+  </section>
 
-    <section class="card">
-      <h2><span class="no">09</span> Reporting &amp; exports</h2>
-      <p class="lead">Analyse détaillée.</p>
-      <ul>
-        <li><b>Plage de dates</b> personnalisable.</li>
-        <li>Financier, top/flop articles, catégories, paiements, CA/jour, pic horaire, panier moyen, emplacements, tickets, <b>recommandations</b>.</li>
-        <li><b>Export CSV</b> par tableau <span class="chip">⬇ CSV</span></li>
-        <li><span class="chip">☁️ Depuis Google Sheets</span> <span class="d">— tout l'historique, tous appareils.</span></li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">06</span> Employés &amp; planning horaires</h2>
+    <h3>Gérer l'équipe</h3>
+    <ol class="steps">
+      <li><span class="chip">☰</span> ▸ <span class="chip">👤 Employés</span> (ou bouton <span class="chip">👤 Employés</span> de l'onglet Horaires).</li>
+      <li><span class="chip">➕ Ajouter</span> crée un employé ; ✏️ le renomme ; ✕ le retire (avec confirmation — ses créneaux passés restent).</li>
+      <li>Touche un nom pour le mettre <b>en poste</b> (il encaissera) ; l'⭐ définit l'employé <b>par défaut</b>, remis en poste chaque matin.</li>
+    </ol>
+    <h3>Planning (onglet 🗓 Horaires)</h3>
+    <ol class="steps">
+      <li>Vue <b>semaine</b> : touche une case jour/employé pour créer ou modifier un créneau (heures de début et fin) ; <span class="chip">🗑 Retirer</span> le supprime. <span class="chip">◀</span>/<span class="chip">▶</span> change de semaine.</li>
+      <li>Vue <b>mois</b> : calendrier d'ensemble des créneaux.</li>
+      <li><b>Feuille mensuelle par employé</b> : récapitulatif d'heures, navigable par mois (◀ ▶).</li>
+      <li><span class="chip">🖨️ Imprimer</span> — planning ou feuille d'heures, imprimable / PDF.</li>
+    </ol>
+  </section>
 
-    <section class="card">
-      <h2><span class="no">10</span> Synchro &amp; application</h2>
-      <p class="lead">Cloud, hors-ligne, iPad.</p>
-      <ul>
-        <li><b>Sync automatique</b> vers Google Sheets à chaque vente.</li>
-        <li><b>Fonctionne hors-ligne</b> <span class="d">— synchro au retour du réseau.</span></li>
-        <li><b>Installée sur l'iPad</b> (plein écran, mises à jour auto).</li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">07</span> Gérer le catalogue (menu ☰)</h2>
+    <p class="lead">Le menu d'articles est <b>partagé entre tous les iPads</b> via Google Sheets : une modification ici apparaît partout.</p>
+    <ul class="pts">
+      <li><span class="chip">➕ Ajouter un article</span> — nom, catégorie (existante ou nouvelle), prix, emoji, actif/inactif.</li>
+      <li><span class="chip">✏️ Modifier un article</span> — active le mode, puis <b>touche l'article</b> à changer. Le bouton <span class="chip">🗑 Supprimer</span> demande confirmation (la suppression vaut pour tous les iPads).</li>
+      <li><span class="chip">🚫 Articles inactifs</span> — liste des articles masqués de la vente ; touche-en un pour le réactiver.</li>
+      <li><span class="chip">🔀 Déplacer les articles</span> — glisser-déposer pour réorganiser, puis <span class="chip">✅ Terminer</span>.</li>
+      <li><span class="chip">🗂 Catégories</span> — renommer et changer l'ordre (▲▼) des catégories.</li>
+      <li><span class="chip tst">⛔ Épuisé aujourd'hui 🧪</span> — marque un article en rupture « 86 » : grisé et invendable jusqu'à demain matin (remise à zéro automatique).</li>
+    </ul>
+    <div class="note warn">🛡️ Le catalogue partagé est protégé : un navigateur de test ou un appareil vierge ne peut pas l'écraser, et une modification faite hors ligne est renvoyée automatiquement dès le retour du réseau.</div>
+  </section>
 
-    <section class="card tip">
-      <h2><span class="no">＋</span> Connecté au Google Sheet</h2>
-      <p class="lead">Ce qui tourne côté cloud.</p>
-      <ul>
-        <li><b>8 onglets de KPI</b> recalculés à chaque vente.</li>
-        <li><b>E-mail récap automatique</b> <span class="d">— chaque vendredi 22h.</span></li>
-        <li><b>Recommandations</b> commerciales générées.</li>
-        <li><span class="d">Publication Facebook quotidienne : prête, en attente du jeton.</span></li>
-      </ul>
-    </section>
+  <section class="sec">
+    <h2><span class="no">08</span> Relevés de température (HACCP)</h2>
+    <p class="lead"><span class="chip">☰</span> ▸ <span class="chip">🌡️ Températures</span> — un onglet par enceinte (frigos, congélateur).</p>
+    <ol class="steps">
+      <li>Choisis l'<b>enceinte</b> en haut (Frigo cuisine, Frigo timbre, Frigo camion, Congélateur…).</li>
+      <li>La grille affiche le mois en cours (<span class="chip">◀</span>/<span class="chip">▶</span> pour changer — le nombre de jours suit le vrai calendrier).</li>
+      <li><b>Touche la case</b> jour × température pour poser le relevé du jour (retouche = effacer, autre case = déplacer).</li>
+      <li>La ligne <b>Initiales</b> se remplit d'un tap — préremplie avec les initiales de l'employé en poste.</li>
+      <li>En cas d'anomalie, note l'<b>action corrective</b> dans le champ dédié.</li>
+      <li><span class="chip">💾 Enregistré ✓</span> tamponne le jour et synchronise vers Google Sheets ; <span class="chip">🖨️ Exporter / Imprimer</span> sort la feuille du mois (PDF).</li>
+    </ol>
+    <p><b>Gérer les enceintes :</b> <span class="chip">✏️ Modifier</span> fait apparaître <span class="chip">＋</span> (ajouter une enceinte : nom + type frigo/congélateur) et <span class="chip">×</span> (supprimer, avec confirmation).</p>
+  </section>
 
-  </div>
+  <section class="sec">
+    <h2><span class="no">09</span> Clôture de caisse <span class="chip tst">🧪</span></h2>
+    <p class="lead"><span class="chip">☰</span> ▸ <span class="chip tst">🧾 Clôture de caisse</span> — le « Z » de fin de service.</p>
+    <ol class="steps">
+      <li>Le <b>jour à clôturer</b> est préréglé sur aujourd'hui — change-le pour rattraper une soirée oubliée (les chiffres du jour choisi se recalculent).</li>
+      <li>Lis le récap : tickets, CA, <b>espèces attendues</b> (paiements mixtes correctement ventilés), carte.</li>
+      <li>Saisis le <b>fond de caisse</b> de début (prérempli avec celui de la veille) et les <b>espèces comptées</b> en fin de service (virgule acceptée).</li>
+      <li>L'<b>écart</b> s'affiche en direct : ✅ caisse juste, ou ⚠️ excédent / manque chiffré. Ajoute une note si besoin (justification d'écart).</li>
+      <li><span class="chip">💾 Clôturer la journée</span> enregistre (re-clôturer le même jour remplace) ; <span class="chip">⬇ CSV</span> exporte la clôture.</li>
+    </ol>
+    <div class="note good">☁️ Chaque clôture est sauvegardée dans l'onglet « 🧾 Clôtures » du Google Sheet — l'historique survit à l'iPad. Les 5 dernières clôtures s'affichent en bas du modal.</div>
+  </section>
+
+  <section class="sec">
+    <h2><span class="no">10</span> Tableau de bord &amp; Reporting</h2>
+    <h3>📊 Tableau (vue rapide)</h3>
+    <ul class="pts">
+      <li><b>KPI</b> — CA, tickets, panier moyen, CA/jour — sur <span class="chip">Aujourd'hui</span> <span class="chip">7 j</span> <span class="chip">30 j</span> <span class="chip">Tout</span>.</li>
+      <li><b>Graphiques</b> — CA par jour, par heure (pic de service), par emplacement, par catégorie, répartition des paiements, taux d'attache, top pizzas.</li>
+    </ul>
+    <h3>Reporting (analyse fine)</h3>
+    <ol class="steps">
+      <li>Choisis la <b>plage de dates</b> puis <span class="chip">Générer</span>.</li>
+      <li>Parcours les tableaux : financier, top/flop articles, top par catégorie, paiements, CA par jour, articles par jour, pic horaire, panier moyen, CA par emplacement, tickets, recommandations commerciales.</li>
+      <li>Chaque tableau a son <span class="chip">⬇ CSV</span>.</li>
+      <li><span class="chip">☁️ Depuis Google Sheets</span> recharge tout l'historique (tous appareils confondus) — sinon le rechargement se fait tout seul régulièrement.</li>
+    </ol>
+  </section>
+
+  <section class="sec">
+    <h2><span class="no">11</span> Synchronisation, jeton 🛡️ &amp; entretien</h2>
+    <h3>Comment lire l'indicateur (en haut de l'écran)</h3>
+    <table>
+      <tr><th>Affichage</th><th>Signification</th></tr>
+      <tr><td>✅ Sync OK</td><td>Tout est parti vers Google Sheets.</td></tr>
+      <tr><td>🔄 Sync...</td><td>Envoi en cours.</td></tr>
+      <tr><td>⚠️ Hors ligne</td><td>Pas de réseau — les ventes attendent sur l'iPad et repartiront seules (toutes les 15 s et au retour du WiFi).</td></tr>
+      <tr><td>🛡️ Jeton requis / refusé</td><td>L'appareil n'a pas (ou a un mauvais) jeton : <b>rien n'est envoyé</b>. Voir ci-dessous.</td></tr>
+    </table>
+    <h3>Le jeton de sécurité 🛡️</h3>
+    <ul class="pts">
+      <li>Le Google Sheet <b>refuse tout appareil sans jeton</b> — impossible de lire ou d'écrire les données, même en connaissant l'adresse de la caisse.</li>
+      <li>Saisie unique par appareil : <span class="chip">☰</span> ▸ <span class="chip">🛡️ Jeton Google Sheets</span> (identique au secret configuré côté script).</li>
+      <li><b>Règle d'or : le jeton doit être en place AVANT d'encaisser.</b> Une vente tapée sans jeton est marquée « 🛡️ hors sync » dans le mémo et ne partira <b>jamais</b>, même si un jeton est saisi ensuite.</li>
+    </ul>
+    <h3>Boutons d'entretien (☰)</h3>
+    <ul class="pts">
+      <li><span class="chip">🔄 Synchroniser</span> — force un échange complet (ventes, catalogue, relevés, sauvegardes) et <b>annonce le résultat réel</b> : « ✅ synchronisé » ou « ⚠️ X élément(s) en attente ».</li>
+      <li><span class="chip">🧹 Purger les ventes locales</span> — libère la mémoire de l'iPad en supprimant les vieilles ventes <b>déjà en sécurité dans Google Sheets</b>. Jamais celles du jour ni celles en attente d'envoi ; les rapports continuent de tout afficher. Confirmation demandée.</li>
+    </ul>
+  </section>
+
+  <section class="sec">
+    <h2><span class="no">12</span> Mode formation <span class="chip tst">🧪</span></h2>
+    <ol class="steps">
+      <li><span class="chip">☰</span> ▸ <span class="chip tst">🧪 Mode formation</span> pour l'activer (bandeau visible : impossible de le confondre avec la caisse réelle).</li>
+      <li>Encaisse librement : les ventes vont dans un espace <b>séparé</b>, jamais comptées dans les vrais chiffres ni le vrai Sheet.</li>
+      <li>Les fonctions marquées <span class="chip tst">🧪</span> dans ce guide (remise, mixte, attente, épuisé, clôture, reçu) sont visibles dans ce mode : elles sont en rodage avant d'être ouvertes en caisse réelle.</li>
+      <li>Repasse en mode réel par le même bouton. <span class="d">Le catalogue, lui, reste commun aux deux modes.</span></li>
+    </ol>
+  </section>
+
+  <section class="sec">
+    <h2><span class="no">13</span> Côté Google Sheet</h2>
+    <ul class="pts">
+      <li><b>Onglet Transactions</b> — chaque ligne de chaque vente, avec statut Validé/Annulé et le détail des paiements mixtes.</li>
+      <li><b>Onglets de synthèse</b> recalculés à chaque vente : CA par jour, articles/pizzas par jour, CA par catégorie/article, analyse par heure, jour de semaine, CA par emplacement, tableau de bord, recommandations.</li>
+      <li><b>👤 Clients</b> et <b>🧾 Clôtures</b> — sauvegardes automatiques envoyées par l'iPad.</li>
+      <li><b>🌡️ un onglet par enceinte</b> — les relevés de température.</li>
+      <li><b>E-mails automatiques</b> — récap du jour (~2 min après la dernière vente) et récap de la semaine (vendredi 22h).</li>
+      <li><b>Accès verrouillé</b> — toute lecture/écriture exige le jeton 🛡️.</li>
+    </ul>
+    <div class="note warn">⚠️ Ne jamais modifier l'onglet <b>Transactions</b> à la main : c'est la source comptable. Les onglets de synthèse, eux, sont régénérés automatiquement.</div>
+  </section>
+
+  <section class="sec">
+    <h2><span class="no">14</span> Dépannage express</h2>
+    <table>
+      <tr><th>Symptôme</th><th>Cause probable</th><th>Que faire</th></tr>
+      <tr><td>⚠️ Hors ligne en permanence</td><td>Pas de WiFi / partage de connexion coupé</td><td>Rien à faire côté caisse : tout est gardé et repartira seul. Rétablir le réseau quand possible.</td></tr>
+      <tr><td>🛡️ Jeton requis / refusé</td><td>Jeton absent ou différent du secret du script</td><td><span class="chip">☰</span> ▸ 🛡️ Jeton Google Sheets : ressaisir le secret exact (attention aux espaces).</td></tr>
+      <tr><td>Ticket vidé par erreur</td><td>Tap sur « Vider »</td><td>Toucher <b>↩ Annuler</b> dans les 5 secondes.</td></tr>
+      <tr><td>Vente encaissée en trop / erreur d'articles</td><td>—</td><td>Mémo ▸ <b>↩ Rembourser</b> (partiel) ou glisser ▸ 🗑️ <b>Annuler</b> (totale).</td></tr>
+      <tr><td>Article introuvable à la vente</td><td>Marqué ⛔ épuisé ou désactivé</td><td>☰ ▸ ⛔ Épuisé aujourd'hui (retirer la rupture) ou ☰ ▸ 🚫 Articles inactifs (réactiver).</td></tr>
+      <tr><td>« Trop d'essais » à l'ouverture</td><td>5 codes PIN faux</td><td>Attendre 30 secondes puis ressaisir calmement.</td></tr>
+      <tr><td>« ⚠️ STOCKAGE PLEIN »</td><td>Mémoire iPad saturée malgré la purge auto</td><td>Noter le ticket sur papier, puis ☰ ▸ 🧹 Purger les ventes locales et re-encaisser.</td></tr>
+      <tr><td>Une vente affiche « 🛡️ hors sync »</td><td>Encaissée sans jeton sur l'appareil</td><td>Elle ne partira jamais (voulu). La retaper sur l'iPad autorisé si c'était une vraie vente, puis purger l'ancienne.</td></tr>
+    </table>
+  </section>
 
   <footer class="foot">
-    <span class="note">📌 Cette notice est mise à jour à chaque nouvelle fonctionnalité ajoutée à la caisse.</span>
+    <span>📌 Ce guide est mis à jour à chaque évolution de la caisse. Pour la version PDF : ouvrir cette page dans un navigateur ▸ Imprimer ▸ « Enregistrer au format PDF ».</span>
     <div class="legend">
-      <span><span class="dot" style="background:var(--clay)"></span> Fonction principale</span>
-      <span><span class="dot" style="background:var(--olive)"></span> Côté cloud / bonus</span>
       <span><span class="chip">Ainsi</span> = bouton ou libellé visible à l'écran</span>
+      <span><span class="chip tst">🧪</span> = visible uniquement en mode formation (fonction en rodage)</span>
     </div>
   </footer>
 </div>
