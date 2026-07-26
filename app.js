@@ -3490,29 +3490,50 @@ function renderAttachement(txs) {
     </table>`;
 }
 
-// ── 🧾 Tickets complets (liste paginée) ───────────────────────────────────────
-// Sur une longue période la liste atteignait plusieurs centaines de lignes et
-// noyait le reste du rapport. On n'affiche qu'une page à la fois, dépliable.
-// L'export CSV n'est pas concerné : il part de `txs`, donc de la période entière.
+// ── 🧾 Tickets complets (jour par défaut, puis dépliage par pages) ────────────
+// Deux garde-fous contre une carte interminable : par défaut elle ne montre que
+// la journée en cours, et même dans ce cadre elle se déplie page par page.
+// L'export CSV n'est concerné par aucun des deux : il part de `txs`, donc de la
+// période entière sélectionnée en haut du rapport.
 const TICKETS_PAGE  = 25;
 let ticketsShown    = TICKETS_PAGE;
+let ticketsScope    = 'jour';   // 'jour' | 'periode'
 let ticketsRangeKey = '';
 
 function renderTicketsReport(txs) {
   const el = document.getElementById('report-tickets');
   if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
 
-  // Le compteur ne repart à zéro qu'au changement de période : un rafraîchissement
-  // automatique (chargement depuis Sheets) ne doit pas replier une liste dépliée.
+  // Compteur et cadrage ne repartent à zéro qu'au changement de période : un
+  // rafraîchissement automatique (chargement depuis Sheets) ne doit pas replier
+  // une liste que l'utilisateur vient de déplier.
   const key = (reportStart.value || '') + '→' + (reportEnd.value || '');
-  if (key !== ticketsRangeKey) { ticketsRangeKey = key; ticketsShown = TICKETS_PAGE; }
+  if (key !== ticketsRangeKey) { ticketsRangeKey = key; ticketsShown = TICKETS_PAGE; ticketsScope = 'jour'; }
 
-  const all   = txs.slice().reverse();          // les plus récents d'abord
+  const today  = todayISO();
+  // Si la période choisie ne couvre pas aujourd'hui (rapport du mois dernier…),
+  // le filtre « du jour » n'a plus de sens : on montre la période, sinon la carte
+  // paraîtrait vide à tort.
+  const dansLaPeriode = (reportStart.value || today) <= today && today <= (reportEnd.value || today);
+  const dayTxs = txs.filter(t => localDayOf(t.date) === today);
+  const jour   = ticketsScope === 'jour' && dansLaPeriode;
+
+  const all   = (jour ? dayTxs : txs).slice().reverse();   // les plus récents d'abord
   const shown = Math.min(ticketsShown, all.length);
   const reste = all.length - shown;
   const s     = n => n > 1 ? 's' : '';
 
-  el.innerHTML = `
+  const entete = `
+    <div class="report-scope">
+      <span class="report-scope-label">${jour
+        ? `📆 Tickets du jour · ${dayTxs.length}`
+        : `📆 Toute la période · ${txs.length} ticket${s(txs.length)}`}</span>
+      ${dansLaPeriode ? `<button class="btn-ghost" id="btn-tickets-scope">${jour
+        ? `Afficher toute la période (${txs.length})`
+        : `Revenir aux tickets du jour (${dayTxs.length})`}</button>` : ''}
+    </div>`;
+
+  el.innerHTML = entete + (all.length ? `
     <table class="report-table">
       <thead><tr><th>Heure</th><th>Articles</th><th>Mode</th><th>Total</th></tr></thead>
       <tbody>${all.slice(0, shown).map(tx => `
@@ -3528,8 +3549,15 @@ function renderTicketsReport(txs) {
       <span class="report-more-count">${shown} ticket${s(shown)} affiché${s(shown)} sur ${all.length}</span>
       ${reste ? `<button class="btn-secondary" id="btn-tickets-more">⬇ ${Math.min(TICKETS_PAGE, reste)} de plus</button>` : ''}
       ${reste > TICKETS_PAGE ? `<button class="btn-ghost" id="btn-tickets-all">Tout afficher (${reste} restants)</button>` : ''}
-    </div>`;
+    </div>`
+    : `<p class="empty-msg">Aucun ticket aujourd'hui — la période sélectionnée en compte ${txs.length}.</p>`);
 
+  const scope = document.getElementById('btn-tickets-scope');
+  if (scope) scope.addEventListener('click', () => {
+    ticketsScope = jour ? 'periode' : 'jour';
+    ticketsShown = TICKETS_PAGE;
+    renderTicketsReport(txs);
+  });
   const more = document.getElementById('btn-tickets-more');
   if (more) more.addEventListener('click', () => { ticketsShown += TICKETS_PAGE; renderTicketsReport(txs); });
   const tout = document.getElementById('btn-tickets-all');
