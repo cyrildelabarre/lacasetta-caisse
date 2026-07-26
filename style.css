@@ -1183,6 +1183,17 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 }
 .menu-section:first-child { margin-top: 0; }
 
+/* Pied de menu : version installée sur CET iPad (toucher = chercher une mise à jour) */
+.menu-build {
+  display: block; width: 100%;
+  margin-top: .7rem; padding: .35rem;
+  background: none; border: none;
+  font-size: .72rem; color: var(--mid); text-align: center;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.menu-build:active { opacity: .55; }
+.menu-build.stale { color: #b3541e; font-weight: 700; }
+
 /* ════════════════ CLIENTS (CRM) ════════════════ */
 
 /* Bouton client du ticket */

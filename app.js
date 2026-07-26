@@ -911,6 +911,73 @@ document.getElementById('btn-menu').addEventListener('click', () => { updateTest
 document.getElementById('btn-menu-close').addEventListener('click', closeMenu);
 menuModal.addEventListener('click', e => { if (e.target === menuModal) closeMenu(); });
 
+// ── Version installée sur CET appareil ────────────────────────────────────────
+// Pas de système de build : on lit l'en-tête Last-Modified du document, que
+// GitHub Pages date du déploiement. Rien à incrémenter à la main — un numéro
+// qu'on oublie de monter serait pire que pas de numéro du tout.
+// Dépendance à connaître : si l'hébergeur n'envoie PAS cet en-tête, le navigateur
+// substitue l'heure courante et la « version » affichée n'a plus de sens (c'est
+// le cas d'un simple serveur local de test ; GitHub Pages, lui, l'envoie
+// toujours — vérifié sur https://cyrildelabarre.github.io/lacasetta-caisse/).
+// Toucher la ligne interroge le serveur : c'est la réponse à « cet iPad
+// tourne-t-il la dernière version ? », jusqu'ici invisible — une PWA reprise
+// depuis la mémoire ne recharge jamais ses fichiers, elle peut donc rester des
+// jours sur du code ancien sans que personne ne s'en aperçoive.
+const buildEl = document.getElementById('menu-build');
+
+function buildStamp() {
+  const d = new Date(document.lastModified);
+  return isNaN(d.getTime()) ? null : d;
+}
+function fmtBuild(d) {
+  return d.toLocaleDateString('fr-FR') + ' à ' +
+         d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+function renderBuild() {
+  const d = buildStamp();
+  buildEl.classList.remove('stale');
+  buildEl.textContent = d ? 'Version du ' + fmtBuild(d) : 'Version inconnue';
+}
+renderBuild();
+
+async function checkForUpdate() {
+  const local = buildStamp();
+  buildEl.textContent = 'Vérification…';
+  let remote = null;
+  try {
+    // HEAD : le service worker ne traite que les GET, la réponse vient donc
+    // bien du serveur. Le paramètre horodaté écarte en plus le cache de Safari.
+    const res = await fetch('./index.html?v=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
+    const lm  = res.headers.get('last-modified');
+    if (lm) remote = new Date(lm);
+  } catch { /* hors ligne : traité ci-dessous */ }
+
+  if (!remote || isNaN(remote.getTime())) {
+    renderBuild();
+    showToast('⚠️ Vérification impossible — serveur injoignable (hors ligne ?).');
+    return;
+  }
+  // 60 s de tolérance : tous les fichiers d'un même déploiement partagent la date.
+  if (local && remote - local <= 60000) {
+    renderBuild();
+    showToast('✅ Cet appareil est à jour.');
+    return;
+  }
+  buildEl.classList.add('stale');
+  buildEl.textContent = '⚠️ Mise à jour dispo (' + fmtBuild(remote) + ')';
+  const warn = ticket.length
+    ? `\n\n⚠️ Le ticket en cours (${ticket.length} ligne${ticket.length > 1 ? 's' : ''}) sera perdu.`
+    : '';
+  if (!await posConfirm('Une version plus récente est disponible sur le serveur.\n\nRecharger maintenant ?' + warn,
+      { title: '⬆️ Mise à jour disponible', okLabel: 'Recharger' })) return;
+  if (navigator.serviceWorker) {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.update().catch(() => {});
+  }
+  location.reload();
+}
+buildEl.addEventListener('click', checkForUpdate);
+
 function goToCaisse() {
   const btn = document.querySelector('.tab-btn[data-tab="caisse"]');
   if (!document.getElementById('tab-caisse').classList.contains('active')) btn.click();
