@@ -567,9 +567,28 @@ function sendWeeklyReport() {
 }
 
 // Récap du jour (ventes du jour même).
+// Déclenché par la CLÔTURE DE CAISSE, plus par l'arrivée des ventes : « 2 min
+// après la dernière vente reçue » partait avec une seule vente si les autres
+// étaient encore bloquées sur un iPad fermé. La clôture annonce le nombre de
+// tickets du jour : on n'envoie que lorsque le Sheet en contient au moins
+// autant, sinon on réessaie (jusqu'à 30 min), puis on envoie en le disant.
+const DAILY_RETRY_KEY = 'DAILY_REPORT_RETRY';
+const DAILY_RETRY_MAX = 6;   // 6 × 5 min
+
+// Nombre de tickets annoncé par la clôture du jour (null si pas de clôture reçue).
+function closureTicketsFor(dayK) {
+  const sh = getOrCreateSpreadsheet().getSheetByName('🧾 Clôtures');
+  if (!sh || sh.getLastRow() < 2) return null;
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (dateKey(rows[i][0]) === dayK) return Number(rows[i][3]) || 0;
+  }
+  return null;
+}
+
 function sendDailyReport() {
-  // Nettoie les déclencheurs ponctuels « sendDailyReport » (celui qui vient de se déclencher
-  // + un éventuel ancien déclencheur horaire 22h15).
+  // Nettoie les déclencheurs ponctuels « sendDailyReport » (celui qui vient de se
+  // déclencher + un éventuel ancien déclencheur horaire 22h15 encore installé).
   ScriptApp.getProjectTriggers().forEach(t => {
     if (t.getHandlerFunction() === 'sendDailyReport') ScriptApp.deleteTrigger(t);
   });
@@ -581,20 +600,67 @@ function sendDailyReport() {
 
   if (!tk.length) { Logger.log('Aucune vente aujourd\'hui — pas d\'e-mail.'); return; }
 
+  // Toutes les ventes annoncées par la clôture sont-elles arrivées ?
+  const props    = PropertiesService.getScriptProperties();
+  const attendus = closureTicketsFor(todayK);
+  let warning = '';
+  if (attendus == null) {
+    // Pas de clôture : on n'arrive ici que par le filet de 23 h. On envoie, en le disant.
+    warning = 'La clôture de caisse n\'a pas été reçue — ce récap peut être incomplet '
+      + 'si des ventes sont restées sur un iPad.';
+  } else if (tk.length < attendus) {
+    const retry = Number(props.getProperty(DAILY_RETRY_KEY)) || 0;
+    if (retry < DAILY_RETRY_MAX) {
+      props.setProperty(DAILY_RETRY_KEY, String(retry + 1));
+      ScriptApp.newTrigger('sendDailyReport').timeBased().after(5 * 60 * 1000).create();
+      Logger.log(`Récap différé (${retry + 1}/${DAILY_RETRY_MAX}) : ${tk.length} vente(s) dans le Sheet, ${attendus} annoncées par la clôture.`);
+      return;
+    }
+    warning = `${attendus - tk.length} vente(s) annoncée(s) par la clôture ne sont pas arrivées `
+      + 'dans Google Sheets après 30 min — vérifiez l\'iPad (réseau, jeton).';
+  }
+  props.deleteProperty(DAILY_RETRY_KEY);
+
   buildAndSendReport(tk, ln,
     { titleLabel:'Récap du jour', recoTitle:'Recommandations du jour',
-      subjectKind:'Récap jour', whenText:'Email automatique envoyé après la dernière vente du jour.',
+      subjectKind:'Récap jour', whenText:'Email automatique envoyé après la clôture de caisse.',
       periode: Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy'),
-      emptyKind:'aucune vente aujourd\'hui' });
+      emptyKind:'aucune vente aujourd\'hui', warning: warning });
 }
 
-// Programme (ou re-programme) l'envoi du récap du jour ~2 min après la dernière vente.
-// Appelé à chaque ajout de ventes → « rebond » : le compteur repart si une vente arrive.
+// Arme (ou ré-arme) l'envoi du récap ~3 min après la clôture de caisse.
 function scheduleDailyReport() {
+  PropertiesService.getScriptProperties().deleteProperty(DAILY_RETRY_KEY);
   ScriptApp.getProjectTriggers().forEach(t => {
     if (t.getHandlerFunction() === 'sendDailyReport') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('sendDailyReport').timeBased().after(2 * 60 * 1000).create();
+  ScriptApp.newTrigger('sendDailyReport').timeBased().after(3 * 60 * 1000).create();
+}
+
+// Des ventes arrivent alors que le compte à rebours tourne (retardataires poussés
+// depuis l'écran de clôture) : on repart pour 3 min. Si aucun envoi n'est armé
+// (pas de clôture reçue), on ne fait RIEN — c'est tout l'objet du changement.
+function rescheduleDailyReportIfPending() {
+  const pending = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'sendDailyReport');
+  if (pending) scheduleDailyReport();
+}
+
+// Filet de sécurité 23 h : clôture oubliée mais des ventes existent → récap quand
+// même, avec l'avertissement « clôture non reçue ». À installer UNE FOIS via
+// setupDailyFallbackTrigger(). Si la clôture est déjà passée, il ne fait rien.
+function sendDailyReportFallback() {
+  const todayK = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  if (closureTicketsFor(todayK) != null) return;   // clôture reçue : le circuit normal a géré
+  sendDailyReport();
+}
+
+// À EXÉCUTER UNE FOIS depuis l'éditeur : installe le filet de 23 h.
+function setupDailyFallbackTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'sendDailyReportFallback') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendDailyReportFallback').timeBased().everyDays(1).atHour(23).nearMinute(0).create();
+  Logger.log('Filet 23 h installé : récap envoyé même si la clôture est oubliée (avec avertissement).');
 }
 
 // Générateur commun d'e-mail récap.
@@ -796,12 +862,20 @@ function buildAndSendReport(tk, ln, opts) {
                  'categories','emplacement','starParCategorie','topArticles','flopArticles',
                  'attachement','panierMoyen','ventesDetail','recommandations'];
 
+  // Bandeau rouge sous l'en-tête quand le récap part avec un doute (ventes
+  // manquantes malgré les relances, ou clôture jamais reçue).
+  const warnHtml = opts.warning
+    ? `<div style="background:#fdecea;color:#9b2c1e;border:1px solid #e0a093;border-radius:8px;
+        padding:10px 14px;margin:16px 24px 0;font-size:13px;font-weight:700">⚠️ ${opts.warning}</div>`
+    : '';
+
   const wrap = inner => `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:auto;background:${C.bg};padding:0 0 24px;border-radius:12px;overflow:hidden">
     <div style="background:${C.brand};color:#fff;padding:22px 24px">
       <div style="font-size:20px;font-weight:800">🍕 La Casetta — ${opts.titleLabel}</div>
       <div style="opacity:.85;font-size:13px;margin-top:4px">${periode}</div>
     </div>
+    ${warnHtml}
     <div style="padding:20px 24px">
       ${inner}
       <p style="font-size:12px;color:#999;margin-top:24px">
@@ -1063,6 +1137,10 @@ function doPost(e) {
     // Sauvegarde des clôtures de caisse — onglet « 🧾 Clôtures ».
     if (data && !Array.isArray(data) && data.closuresSync) {
       const n = saveClosuresBackup(ss, data.closuresSync);
+      // La clôture du JOUR est le signal « service terminé » : c'est elle qui arme
+      // le récap quotidien (envoyé quand toutes les ventes annoncées sont là).
+      const todayK = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+      if (data.closuresSync.some(c => c && c.date === todayK)) scheduleDailyReport();
       return ContentService.createTextOutput(JSON.stringify({ ok: true, closures: n }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -1094,7 +1172,9 @@ function doPost(e) {
       sheet.getRange('B2:B').setNumberFormat('dd/mm/yyyy');
       numberTickets(sheet);
       createAllSheets(ss);
-      scheduleDailyReport();   // récap du jour ~2 min après la dernière vente
+      // Ne ré-arme le récap que si la clôture l'a déjà armé (retardataires) :
+      // l'arrivée de ventes seule ne déclenche plus l'e-mail.
+      rescheduleDailyReportIfPending();
     }
 
     return ContentService.createTextOutput(JSON.stringify({ok:true, lines:added}))
