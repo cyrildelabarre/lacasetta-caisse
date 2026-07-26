@@ -1088,6 +1088,7 @@ function saveTempRecord(enc, month, rec) {
 let tempRec = null; // enregistrement en cours d'édition
 
 function openTempModal(enc) {
+  renderTempSync();     // état du dernier rapatriement, avant même la réponse
   pullTemperatures();   // relevés des autres iPads, comme les ventes à l'ouverture d'un rapport
   tempEnc = (enc && encById(enc)) ? enc : (getEnclosures()[0] || {}).id;
   tempMonth = todayISO().slice(0, 7);
@@ -1150,20 +1151,70 @@ function pushTemperatures() {
 // (sur iPad l'app est reprise, pas rechargée : la ligne d'init ne rejoue jamais).
 let tempPulling = false;
 let tempPulledAt = 0;   // dernière TENTATIVE, pour espacer le filet périodique
+
+// ── État du rapatriement, affiché dans le modal ───────────────────────────────
+// Un échec était totalement muet : la grille s'affichait vide, sans rien qui
+// distingue « aucun relevé saisi » de « chargement raté ». Sur un registre HACCP
+// le doute coûte cher — un frigo paraît non relevé alors qu'il l'a été ailleurs.
+let tempSyncState = 'idle';   // idle | loading | ok | error | token | paused
+function setTempSyncState(s) { tempSyncState = s; renderTempSync(); }
+
+function renderTempSync() {
+  const el = document.getElementById('temp-sync');
+  if (!el) return;
+  const txt   = document.getElementById('temp-sync-text');
+  const retry = document.getElementById('btn-temp-retry');
+  const okAt  = LS.get('pos_temp_pulled_ok', 0);
+  const heure = okAt ? new Date(okAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+  const quand = okAt
+    ? (localDayOf(new Date(okAt).toISOString()) === todayISO()
+        ? `aujourd'hui à ${heure}`
+        : `le ${new Date(okAt).toLocaleDateString('fr-FR')} à ${heure}`)
+    : null;
+  const jamais = 'jamais sur cet appareil';
+
+  const vues = {
+    loading: ['warn', '🔄 Chargement des relevés partagés…', false],
+    ok:      ['ok',   `☁️ Relevés partagés à jour — dernière synchro ${quand}.`, false],
+    error:   ['ko',   `⚠️ Relevés partagés NON chargés (serveur injoignable) — vous ne voyez que cet appareil. `
+                      + `Dernière synchro : ${quand || jamais}.`, true],
+    token:   ['ko',   `🛡️ Relevés partagés NON chargés : jeton absent ou refusé — ni envoi ni réception depuis cet appareil `
+                      + `(☰ ▸ 🛡️ Jeton Google Sheets). Dernière synchro : ${quand || jamais}.`, true],
+    paused:  ['warn', '✏️ Saisie en cours non enregistrée — rapatriement suspendu jusqu\'au clic sur « Enregistrer ».', false],
+  };
+  const vue = vues[tempSyncState];
+  if (!vue) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = 'temp-sync ' + vue[0];
+  txt.textContent = vue[1];
+  retry.hidden = !vue[2];
+}
+
+document.getElementById('btn-temp-retry').addEventListener('click', () => {
+  tempPulledAt = 0;      // ignore l'espacement du filet périodique
+  pullTemperatures();
+});
+
 function pullTemperatures() {
   if (tempPulling) return;
-  // Saisie en cours non envoyée : on ne réécrit pas par-dessus.
-  if (tempDirty) return;
+  // Saisie en cours non envoyée : on ne réécrit pas par-dessus — et on le dit,
+  // sinon l'absence de mise à jour passerait pour une panne.
+  if (tempDirty) { setTempSyncState('paused'); return; }
   tempPulling = true;
   tempPulledAt = Date.now();
+  setTempSyncState('loading');
   const cbName = '__tempCb' + Date.now();
   let script;
   const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
     if (script) script.remove(); tempPulling = false; clearTimeout(timer); };
-  const timer = setTimeout(cleanup, 20000);
+  // Le délai dépassé est un échec : sans ça, l'état restait « chargement » à vie.
+  const timer = setTimeout(() => { cleanup(); setTempSyncState('error'); }, 20000);
   window[cbName] = data => {
     cleanup();
-    if (!data || !data.ok || !Array.isArray(data.enclosures)) return;
+    if (data && data.error === 'unauthorized') { setTempSyncState('token'); return; }
+    if (!data || !data.ok || !Array.isArray(data.enclosures)) { setTempSyncState('error'); return; }
+    LS.set('pos_temp_pulled_ok', Date.now());
+    setTempSyncState('ok');
     let list = getEnclosures().slice();
     const all = LS.get('pos_temp_records', {});
     data.enclosures.forEach(cloud => {
@@ -1189,7 +1240,7 @@ function pullTemperatures() {
   };
   script = document.createElement('script');
   script.src = withToken(PROD_SHEETS_URL + '?action=temperatures&callback=' + cbName + '&t=' + Date.now());
-  script.onerror = cleanup;
+  script.onerror = () => { cleanup(); setTempSyncState('error'); };
   document.body.appendChild(script);
 }
 
@@ -1406,6 +1457,13 @@ document.getElementById('btn-temp-save').addEventListener('click', () => {
   Object.keys(tempRec.temps).forEach(d => { if (!tempRec.initialsByDay[d]) tempRec.initialsByDay[d] = ini; });
   persistTemp();
   pushTemperatures();   // envoi immédiat vers Google Sheets
+  // Le message ne doit refléter que ce qui s'est réellement passé : pushTemperatures()
+  // sort sans rien envoyer s'il n'y a pas de jeton, et laisse donc la saisie « dirty »
+  // — auquel cas le rapatriement reste bloqué et c'est le jeton qu'il faut signaler.
+  if (tempSyncState === 'paused') {
+    if (!tempDirty)             setTempSyncState(LS.get('pos_temp_pulled_ok', 0) ? 'ok' : 'idle');
+    else if (!sheetsToken())    setTempSyncState('token');
+  }
   renderTempGrid();
   document.getElementById('modal-temp').classList.remove('open'); // ferme le modal
   showToast(`Relevé enregistré — initiales « ${ini} » ajoutées au jour ${day}.`);
