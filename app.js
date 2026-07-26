@@ -3160,7 +3160,7 @@ function buildInsights(txs) {
   const topArts=sortD(artCA), topHeure=sortD(heureCA), topJour=sortD(jourCA), topCat=sortD(catCA);
   // « À surveiller » : on exclut les articles offerts (0 €) ainsi que le top 3,
   // sinon un même article pouvait être cité à la fois en top et en moins vendu.
-  const flopArts = topArts.slice(3).filter(e => !/\(offert/i.test(e[0]));
+  const flopArts = topArts.slice(3).filter(e => !isOffertLabel(e[0]));
 
   const f   = fmtEur;
   const pct = (a,b)=> b ? Math.round(a/b*100)+'%' : '—';
@@ -3234,6 +3234,10 @@ function renderFinancier(txs, start, end) {
   `;
 }
 
+// Une ligne offerte est enregistrée sous « Nom de l'article (offert) » à 0 €
+// (voir la validation du ticket) : ces lignes ne sont pas des ventes.
+function isOffertLabel(name) { return /\(offert/i.test(String(name || '')); }
+
 function articleStats(txs) {
   // Groupement par NOM : les lignes rechargées depuis Google Sheets n'ont pas
   // d'id, et les id du catalogue diffèrent d'un iPad à l'autre — grouper par id
@@ -3253,9 +3257,13 @@ function articleStats(txs) {
 
 function renderTopArticles(txs, top) {
   const stats = articleStats(txs);
+  // « Moins vendus » exclut les lignes offertes (« … (offert) », 0 €) : ce sont
+  // des cadeaux, pas des articles qui se vendent mal — elles squattaient le bas
+  // du classement à chaque geste commercial ou pizza de fidélité.
+  const base  = top ? stats : stats.filter(a => !isOffertLabel(a.name));
   // Le flop exclut les articles déjà présents dans le top 8 : avec moins de
   // 16 articles distincts, le même article apparaissait dans les deux listes.
-  const list  = top ? stats.slice(0, 8) : stats.slice(Math.max(8, stats.length - 8)).reverse();
+  const list  = top ? base.slice(0, 8) : base.slice(Math.max(8, base.length - 8)).reverse();
   const elId  = top ? 'report-top-articles' : 'report-bottom-articles';
   if (!stats.length) { document.getElementById(elId).innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
   if (!list.length)  { document.getElementById(elId).innerHTML = '<p class="empty-msg">Tous les articles vendus figurent déjà dans le top.</p>'; return; }
