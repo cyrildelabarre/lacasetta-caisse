@@ -1021,6 +1021,7 @@ function saveTempRecord(enc, month, rec) {
 let tempRec = null; // enregistrement en cours d'édition
 
 function openTempModal(enc) {
+  pullTemperatures();   // relevés des autres iPads, comme les ventes à l'ouverture d'un rapport
   tempEnc = (enc && encById(enc)) ? enc : (getEnclosures()[0] || {}).id;
   tempMonth = todayISO().slice(0, 7);
   loadTempInto();
@@ -1050,7 +1051,10 @@ function loadTempInto() {
   document.getElementById('temp-corrective').value = tempRec.corrective || '';
   renderTempGrid();
 }
-function persistTemp() { saveTempRecord(tempEnc, tempMonth, tempRec); } // envoi cloud seulement au clic « Enregistrer »
+// Saisie locale non encore poussée vers le cloud : tant qu'elle dure, aucun
+// rapatriement ne vient réécrire les jours en cours de saisie.
+let tempDirty = false;
+function persistTemp() { tempDirty = true; saveTempRecord(tempEnc, tempMonth, tempRec); } // envoi cloud seulement au clic « Enregistrer »
 
 // Envoi des relevés vers Google Sheets : un onglet par enceinte (via la prod).
 function tempPayload() {
@@ -1064,19 +1068,27 @@ function tempPayload() {
   return { tempSync: { enclosure: e ? e.name : tempEnc, type: e ? e.type : 'frigo', month: tempMonth, days } };
 }
 function pushTemperatures() {
-  if (!sheetsToken()) return;   // sans jeton : aucun envoi
+  if (!sheetsToken()) return;   // sans jeton : aucun envoi (la saisie reste « dirty »)
   const p = tempPayload();
   if (!p.tempSync.days.length) return;
+  tempDirty = false;
   fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify(p) }).catch(() => {});
 }
 
-// Récupère les relevés depuis Google Sheets au démarrage (comme les ventes) : les
-// jours présents dans le cloud écrasent le local ; les jours locaux non encore
+// Récupère les relevés depuis Google Sheets (comme les ventes) : les jours
+// présents dans le cloud écrasent le local ; les jours locaux non encore
 // synchronisés sont conservés (le cloud ne les référence pas encore).
+// Déclencheurs : démarrage, ouverture du modal 🌡️, retour du réseau, retour au
+// premier plan et filet périodique — le seul appel au démarrage ne suffisait pas
+// (sur iPad l'app est reprise, pas rechargée : la ligne d'init ne rejoue jamais).
 let tempPulling = false;
+let tempPulledAt = 0;   // dernière TENTATIVE, pour espacer le filet périodique
 function pullTemperatures() {
   if (tempPulling) return;
+  // Saisie en cours non envoyée : on ne réécrit pas par-dessus.
+  if (tempDirty) return;
   tempPulling = true;
+  tempPulledAt = Date.now();
   const cbName = '__tempCb' + Date.now();
   let script;
   const cleanup = () => { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
@@ -1104,8 +1116,9 @@ function pullTemperatures() {
     });
     saveEnclosures(list);
     LS.set('pos_temp_records', all);
-    // rafraîchit la vue si le modal est ouvert
-    if (document.getElementById('modal-temp').classList.contains('open')) loadTempInto();
+    // rafraîchit la vue si le modal est ouvert — sauf si une saisie a démarré
+    // pendant le vol de la requête (elle serait perdue à l'écran).
+    if (!tempDirty && document.getElementById('modal-temp').classList.contains('open')) loadTempInto();
   };
   script = document.createElement('script');
   script.src = withToken(PROD_SHEETS_URL + '?action=temperatures&callback=' + cbName + '&t=' + Date.now());
@@ -1180,6 +1193,13 @@ function pushAllTemperatures() {
     if (!days.length) return;
     fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ tempSync: { enclosure: enc.name, type: enc.type, month, days } }) }).catch(() => {});
   });
+  tempDirty = false;   // tout le local est parti : le rapatriement peut reprendre
+}
+
+// Filet périodique / retour au premier plan : au plus une tentative par 5 min.
+function autoPullTemperatures() {
+  if (Date.now() - tempPulledAt < 300000) return;
+  pullTemperatures();
 }
 
 // Échange complet à la demande : envoie ET récupère ventes, catalogue, relevés.
@@ -3140,7 +3160,7 @@ function buildInsights(txs) {
   const topArts=sortD(artCA), topHeure=sortD(heureCA), topJour=sortD(jourCA), topCat=sortD(catCA);
   // « À surveiller » : on exclut les articles offerts (0 €) ainsi que le top 3,
   // sinon un même article pouvait être cité à la fois en top et en moins vendu.
-  const flopArts = topArts.slice(3).filter(e => !/\(offert/i.test(e[0]));
+  const flopArts = topArts.slice(3).filter(e => !isOffertLabel(e[0]));
 
   const f   = fmtEur;
   const pct = (a,b)=> b ? Math.round(a/b*100)+'%' : '—';
@@ -3214,6 +3234,10 @@ function renderFinancier(txs, start, end) {
   `;
 }
 
+// Une ligne offerte est enregistrée sous « Nom de l'article (offert) » à 0 €
+// (voir la validation du ticket) : ces lignes ne sont pas des ventes.
+function isOffertLabel(name) { return /\(offert/i.test(String(name || '')); }
+
 function articleStats(txs) {
   // Groupement par NOM : les lignes rechargées depuis Google Sheets n'ont pas
   // d'id, et les id du catalogue diffèrent d'un iPad à l'autre — grouper par id
@@ -3233,9 +3257,13 @@ function articleStats(txs) {
 
 function renderTopArticles(txs, top) {
   const stats = articleStats(txs);
+  // « Moins vendus » exclut les lignes offertes (« … (offert) », 0 €) : ce sont
+  // des cadeaux, pas des articles qui se vendent mal — elles squattaient le bas
+  // du classement à chaque geste commercial ou pizza de fidélité.
+  const base  = top ? stats : stats.filter(a => !isOffertLabel(a.name));
   // Le flop exclut les articles déjà présents dans le top 8 : avec moins de
   // 16 articles distincts, le même article apparaissait dans les deux listes.
-  const list  = top ? stats.slice(0, 8) : stats.slice(Math.max(8, stats.length - 8)).reverse();
+  const list  = top ? base.slice(0, 8) : base.slice(Math.max(8, base.length - 8)).reverse();
   const elId  = top ? 'report-top-articles' : 'report-bottom-articles';
   if (!stats.length) { document.getElementById(elId).innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
   if (!list.length)  { document.getElementById(elId).innerHTML = '<p class="empty-msg">Tous les articles vendus figurent déjà dans le top.</p>'; return; }
@@ -3778,6 +3806,7 @@ async function syncToSheets() {
 // Sync à l'ouverture et à la mise en arrière-plan/fermeture
 document.addEventListener('visibilitychange', () => {
   syncToSheets();
+  if (!document.hidden) autoPullTemperatures();   // retour au premier plan (iPad : pas de rechargement)
 });
 
 // Sync dès que le réseau revient (WiFi retrouvé, sans recharger l'app)
@@ -3786,6 +3815,7 @@ window.addEventListener('online', () => {
   syncToSheets();
   if (isCataloguePushPending()) pushCatalogue();
   pullCatalogue();
+  pullTemperatures();
   flushPendingCancels();
   flushDirtyBackups();
 });
@@ -3798,6 +3828,7 @@ setInterval(() => {
   if (isCataloguePushPending()) pushCatalogue();
   if (getPendingCancels().length) flushPendingCancels();
   flushDirtyBackups();
+  autoPullTemperatures();   // rattrape un pull de démarrage tombé hors ligne
 }, 15000);
 
 // Annulations restées en attente d'une session précédente (app fermée hors ligne)
