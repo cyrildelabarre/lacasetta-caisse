@@ -972,6 +972,15 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
 }
 .report-card h3 { font-size: .95rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
 .report-card.card-full { grid-column: 1 / -1; }
+
+/* Dernière ligne : 🧾 Tickets complets (1/3) et 💡 Recommandations (2/3) côte à
+   côte. Les colonnes sont imposées plutôt que déduites du flux : ajouter ou
+   retirer une carte plus haut ne doit pas défaire l'appariement. */
+#card-tickets         { grid-column: 1; min-width: 0; }
+#card-recommandations { grid-column: 2 / -1; min-width: 0; }
+/* Sans ça, la largeur minimale du tableau élargit la colonne et fait éclater la
+   répartition 1/3 – 2/3 sur les écrans étroits : il défile dans sa carte. */
+#report-tickets { overflow-x: auto; }
 .report-table .row-peak { background: #fff4ec; font-weight: 600; }
 
 .reco-section {
