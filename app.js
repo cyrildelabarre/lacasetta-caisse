@@ -3490,11 +3490,32 @@ function renderAttachement(txs) {
     </table>`;
 }
 
+// ── 🧾 Tickets complets (liste paginée) ───────────────────────────────────────
+// Sur une longue période la liste atteignait plusieurs centaines de lignes et
+// noyait le reste du rapport. On n'affiche qu'une page à la fois, dépliable.
+// L'export CSV n'est pas concerné : il part de `txs`, donc de la période entière.
+const TICKETS_PAGE  = 25;
+let ticketsShown    = TICKETS_PAGE;
+let ticketsRangeKey = '';
+
 function renderTicketsReport(txs) {
-  document.getElementById('report-tickets').innerHTML = txs.length ? `
+  const el = document.getElementById('report-tickets');
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+
+  // Le compteur ne repart à zéro qu'au changement de période : un rafraîchissement
+  // automatique (chargement depuis Sheets) ne doit pas replier une liste dépliée.
+  const key = (reportStart.value || '') + '→' + (reportEnd.value || '');
+  if (key !== ticketsRangeKey) { ticketsRangeKey = key; ticketsShown = TICKETS_PAGE; }
+
+  const all   = txs.slice().reverse();          // les plus récents d'abord
+  const shown = Math.min(ticketsShown, all.length);
+  const reste = all.length - shown;
+  const s     = n => n > 1 ? 's' : '';
+
+  el.innerHTML = `
     <table class="report-table">
       <thead><tr><th>Heure</th><th>Articles</th><th>Mode</th><th>Total</th></tr></thead>
-      <tbody>${txs.slice().reverse().map(tx => `
+      <tbody>${all.slice(0, shown).map(tx => `
         <tr>
           <td>${fmtDate(localDayOf(tx.date))}<br><small>${fmtTime(tx.date)}</small></td>
           <td style="font-size:.75rem">${tx.lines.map(l=>`${escapeHtml(l.name)} ×${l.qty}`).join(', ')}</td>
@@ -3503,7 +3524,16 @@ function renderTicketsReport(txs) {
         </tr>`).join('')}
       </tbody>
     </table>
-  ` : '<p class="empty-msg">Aucune donnée</p>';
+    <div class="report-more">
+      <span class="report-more-count">${shown} ticket${s(shown)} affiché${s(shown)} sur ${all.length}</span>
+      ${reste ? `<button class="btn-secondary" id="btn-tickets-more">⬇ ${Math.min(TICKETS_PAGE, reste)} de plus</button>` : ''}
+      ${reste > TICKETS_PAGE ? `<button class="btn-ghost" id="btn-tickets-all">Tout afficher (${reste} restants)</button>` : ''}
+    </div>`;
+
+  const more = document.getElementById('btn-tickets-more');
+  if (more) more.addEventListener('click', () => { ticketsShown += TICKETS_PAGE; renderTicketsReport(txs); });
+  const tout = document.getElementById('btn-tickets-all');
+  if (tout) tout.addEventListener('click', () => { ticketsShown = all.length; renderTicketsReport(txs); });
 }
 
 function renderPanierMoyen(txs) {

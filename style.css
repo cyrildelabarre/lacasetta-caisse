@@ -1526,6 +1526,14 @@ body:not(.testmode) .fx-new { display: none !important; }
 .closure-gap { min-height: 1.2rem; font-size: .88rem; font-weight: 700; color: var(--mid); margin: .5rem 0 .3rem; }
 .closure-gap.ok { color: var(--success); }
 .closure-gap.ko { color: var(--danger); }
+/* Pied de la liste des tickets : compteur + dépliage progressif */
+.report-more {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin-top: .6rem; padding-top: .5rem; border-top: 1px dashed var(--border);
+}
+.report-more-count { font-size: .78rem; color: var(--mid); margin-right: auto; }
+.report-more button { font-size: .8rem; padding: .35rem .7rem; }
+
 /* Ventes pas encore parties vers Google Sheets : impossible à manquer à la clôture */
 .closure-pending {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
