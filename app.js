@@ -3945,6 +3945,16 @@ function markSynced(ids) {
   saveTransactions(txs);
 }
 
+// Demande au serveur de programmer l'e-mail récap du jour, 2 min plus tard.
+// Appelé quand la file de ventes de cet appareil vient de se vider : c'est le
+// signal « WiFi retrouvé + toutes les ventes locales sont sur le Sheet ». Le
+// serveur réarme son compte à rebours à chaque appel → l'e-mail part 2 min après
+// la dernière remontée. Réservé à la prod : en formation, aucun e-mail réel.
+function armDailyReport() {
+  if (isTestMode() || !sheetsToken()) return;
+  fetch(withToken(PROD_SHEETS_URL), { method: 'POST', body: JSON.stringify({ dailyReportArm: true }) }).catch(() => {});
+}
+
 // Envoie les transactions non synchronisées à Google Sheets.
 // Garde anti-doublon : un seul envoi à la fois (plusieurs déclencheurs peuvent
 // se chevaucher — après-vente, retour réseau, relance périodique, avant-plan).
@@ -3971,6 +3981,10 @@ async function syncToSheets() {
     if (json.ok) {
       markSynced(pending.map(t => t.id));
       setSyncStatus('ok');
+      // Toutes les ventes locales viennent d'arriver sur le Sheet (file vidée) :
+      // on demande l'e-mail récap, 2 min après cette dernière remontée. Une
+      // nouvelle vente remontée plus tard réarmera ce compte à rebours côté serveur.
+      if (!getTransactions().some(t => !t.synced && !t.localOnly)) armDailyReport();
       setTimeout(() => setSyncStatus('idle'), 3000);
     } else if (json.error === 'unauthorized') {
       // Jeton refusé par le serveur : les ventes restent locales, on prévient.
