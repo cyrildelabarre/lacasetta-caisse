@@ -4168,8 +4168,59 @@ function refreshClosureModal() {
   document.getElementById('closure-counted').value = existing ? existing.counted : '';
   document.getElementById('closure-notes').value   = existing ? (existing.notes || '') : '';
   updateClosureGap();
+  renderClosurePending();
   renderClosureHistory();
 }
+
+// ── Ventes pas encore parties vers Google Sheets : alerte à la clôture ────────
+// La caisse ne synchronise que tant qu'elle tourne : des ventes encaissées juste
+// avant la fermeture peuvent rester sur l'iPad toute la nuit sans que rien ne le
+// signale — l'indicateur d'en-tête disparaît avec l'app. La clôture est le seul
+// geste systématique de fin de service : c'est là qu'il faut le dire.
+function pendingSalesInfo(date) {
+  const txs     = getTransactions();
+  const waiting = txs.filter(t => !t.synced && !t.localOnly);   // partiront au prochain envoi
+  const blocked = txs.filter(t => !t.synced && t.localOnly);    // encaissées sans jeton : jamais
+  return {
+    waiting: waiting.length,
+    blocked: blocked.length,
+    waitingOnDay: date ? waiting.filter(t => localDayOf(t.date) === date).length : 0,
+  };
+}
+
+function renderClosurePending() {
+  const el   = document.getElementById('closure-pending');
+  const info = pendingSalesInfo(closureSelectedDate());
+  if (!info.waiting && !info.blocked) { el.hidden = true; return; }
+  const s = n => n > 1 ? 's' : '';
+  const msg = [];
+  if (info.waiting) {
+    msg.push(`⚠️ <b>${info.waiting} vente${s(info.waiting)} pas encore envoyée${s(info.waiting)}</b> vers Google Sheets`
+      + (info.waitingOnDay ? ` (dont ${info.waitingOnDay} sur la journée clôturée)` : '')
+      + ` — ne fermez pas la caisse avant l'envoi, elle ne synchronise que lorsqu'elle est ouverte.`);
+  }
+  if (info.blocked) {
+    msg.push(`🛡️ ${info.blocked} vente${s(info.blocked)} ne partira${info.blocked > 1 ? 'ont' : ''} jamais : `
+      + `encaissée${s(info.blocked)} alors qu'aucun jeton n'était saisi sur cet appareil.`);
+  }
+  document.getElementById('closure-pending-text').innerHTML = msg.join('<br>');
+  document.getElementById('btn-closure-sync').hidden = !info.waiting;
+  el.hidden = false;
+}
+
+document.getElementById('btn-closure-sync').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-closure-sync');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Envoi…';
+  await syncToSheets();
+  flushPendingCancels();
+  btn.disabled = false; btn.textContent = label;
+  const left = pendingSalesInfo().waiting;
+  showToast(left
+    ? `⚠️ ${left} vente${left > 1 ? 's' : ''} toujours en attente — vérifiez le réseau et le jeton (☰ ▸ 🛡️).`
+    : '✅ Toutes les ventes sont dans Google Sheets.');
+  renderClosurePending();
+});
 
 function openClosureModal() {
   const dateInput = document.getElementById('closure-date');
@@ -4215,7 +4266,16 @@ function buildClosure() {
     notes: document.getElementById('closure-notes').value.trim(),
   };
 }
-document.getElementById('btn-closure-save').addEventListener('click', () => {
+document.getElementById('btn-closure-save').addEventListener('click', async () => {
+  // Clôturer avec des ventes en attente reste possible (parfois il n'y a
+  // simplement pas de réseau), mais plus en silence : le chiffre du Sheet
+  // serait inférieur à celui de la clôture, sans que personne ne le sache.
+  const info = pendingSalesInfo();
+  if (info.waiting && !await posConfirm(
+      `${info.waiting} vente${info.waiting > 1 ? 's ne sont' : ' n\'est'} pas encore `
+      + `dans Google Sheets. Si la caisse est fermée maintenant, ${info.waiting > 1 ? 'elles y resteront' : 'elle y restera'} `
+      + `jusqu'à la prochaine ouverture.\n\nClôturer quand même ?`,
+      { title: '⚠️ Ventes non envoyées', okLabel: 'Clôturer quand même' })) return;
   const c = buildClosure();
   const list = getClosures().filter(x => x.date !== c.date);
   list.push(c);

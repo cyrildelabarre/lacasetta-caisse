@@ -648,6 +648,10 @@
       <label>Jour à clôturer (une journée oubliée peut être clôturée après coup)
         <input type="date" id="closure-date">
       </label>
+      <div class="closure-pending" id="closure-pending" hidden>
+        <span id="closure-pending-text"></span>
+        <button class="btn-secondary" id="btn-closure-sync">📤 Envoyer maintenant</button>
+      </div>
       <div id="closure-summary" class="closure-summary"></div>
       <div class="closure-fields">
         <label>Fond de caisse (début)

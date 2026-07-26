@@ -1526,6 +1526,16 @@ body:not(.testmode) .fx-new { display: none !important; }
 .closure-gap { min-height: 1.2rem; font-size: .88rem; font-weight: 700; color: var(--mid); margin: .5rem 0 .3rem; }
 .closure-gap.ok { color: var(--success); }
 .closure-gap.ko { color: var(--danger); }
+/* Ventes pas encore parties vers Google Sheets : impossible à manquer à la clôture */
+.closure-pending {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: .6rem 0 .2rem; padding: .6rem .7rem;
+  background: #fff3e0; border: 2px solid #e0a93a; border-radius: 10px;
+  font-size: .85rem; line-height: 1.35; color: #7a4e00;
+}
+.closure-pending[hidden] { display: none; }
+.closure-pending #btn-closure-sync { margin-left: auto; white-space: nowrap; }
+
 .closure-history { margin-top: .4rem; }
 .closure-hrow {
   display: flex; justify-content: space-between; gap: .6rem;
