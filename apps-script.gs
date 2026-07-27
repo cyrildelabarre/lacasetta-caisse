@@ -552,18 +552,18 @@ const RECIPIENTS = [
       attachement: true, panierMoyen: true, ventesDetail: true, recommandations: true } },
 ];
 
-// Récap hebdo (7 derniers jours).
+// Récap hebdo — DÉSACTIVÉ (le corps d'origine est dans l'historique git).
+// N'envoie PLUS aucun e-mail. Surtout : si un ancien déclencheur (ex. lundi 8h,
+// resté dans les Déclencheurs Google) la rappelle encore, elle se SUPPRIME
+// elle-même, ainsi que tout autre déclencheur « sendWeeklyReport ». Le récap
+// hebdomadaire s'arrête donc de lui-même dès sa prochaine occurrence, sans
+// intervention — c'est le filet quand on oublie de purger les déclencheurs.
 function sendWeeklyReport() {
-  const stats = computeStats(readValidatedRows(getOrCreateSpreadsheet()));
-  const now = new Date();
-  const within7 = d => (now - d) / 86400000 <= 7;
-  buildAndSendReport(
-    stats.tickets.filter(t => within7(t.date)),
-    stats.lines.filter(l => within7(l.date)),
-    { titleLabel:'Récap de la semaine', recoTitle:'Recommandations de la semaine',
-      subjectKind:'Récap semaine', whenText:'Email automatique envoyé chaque vendredi soir.',
-      periode:`${Utilities.formatDate(new Date(now-7*86400000), TZ, 'dd/MM')} – ${Utilities.formatDate(now, TZ, 'dd/MM/yyyy')}`,
-      emptyKind:'aucune vente cette semaine' });
+  let n = 0;
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'sendWeeklyReport') { ScriptApp.deleteTrigger(t); n++; }
+  });
+  Logger.log('Récap hebdo désactivé : aucun e-mail envoyé, ' + n + ' déclencheur(s) supprimé(s).');
 }
 
 // Récap du jour (ventes du jour même).
@@ -828,13 +828,25 @@ function buildAndSendReport(tk, ln, opts) {
   });
 }
 
-// À EXÉCUTER UNE FOIS depuis l'éditeur : programme l'envoi chaque vendredi à 22h.
-function createWeeklyTrigger() {
+// À EXÉCUTER UNE FOIS depuis l'éditeur pour ARRÊTER TOUT DE SUITE le récap hebdo :
+// supprime TOUS les déclencheurs « sendWeeklyReport », quel que soit leur horaire
+// (le résidu qui envoie le lundi 8h y compris). À défaut de l'exécuter, le récap
+// s'arrête quand même de lui-même à sa prochaine occurrence (sendWeeklyReport
+// est devenu auto-destructeur), mais ceci évite de recevoir un dernier e-mail.
+function removeWeeklyReport() {
+  let n = 0;
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'sendWeeklyReport') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() === 'sendWeeklyReport') { ScriptApp.deleteTrigger(t); n++; }
   });
-  ScriptApp.newTrigger('sendWeeklyReport')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(22).nearMinute(0).create();
+  Logger.log(n + ' déclencheur(s) hebdo supprimé(s). Plus aucun récap de la semaine ne sera envoyé.');
+}
+
+// Diagnostic : liste TOUS les déclencheurs installés (fonction + type). Utile
+// pour repérer un envoi fantôme dont on ne connaît pas la fonction — le détail
+// horaire, lui, se lit dans le panneau « Déclencheurs » (icône ⏰) de l'éditeur.
+function listAllTriggers() {
+  const lignes = ScriptApp.getProjectTriggers().map(t => '• ' + t.getHandlerFunction() + '  (' + t.getEventType() + ')');
+  Logger.log(lignes.length ? lignes.join('\n') : 'Aucun déclencheur installé.');
 }
 
 // Le récap du jour est désormais envoyé AUTOMATIQUEMENT ~2 min après la dernière vente
