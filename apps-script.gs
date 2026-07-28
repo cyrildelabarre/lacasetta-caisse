@@ -137,6 +137,7 @@ function computeStats(rows) {
     const id = r[COL.id];
     if (!tickets[id]) {
       tickets[id] = {
+        id:    id,
         total: Number(r[COL.total])||0,
         pay:   r[COL.pay],
         loc:   r[COL.loc] || '(non défini)',
@@ -150,8 +151,9 @@ function computeStats(rows) {
     }
     tickets[id].cats[normCat(r[COL.cat])] = true; // catégories présentes dans la vente
     tickets[id].nbArt += Number(r[COL.qty]) || 0;
-    // Nombre de pizzas du ticket : repère les commandes familles / groupes.
-    if (/petite|grande/i.test(normCat(r[COL.cat])))
+    // Nombre de pizzas PAYÉES du ticket : repère les commandes familles / groupes.
+    // (Une pizza offerte ne fait pas d'un ticket de 3 une commande de 4.)
+    if (/petite|grande/i.test(normCat(r[COL.cat])) && !isOffert(r[COL.article]))
       tickets[id].pizzas = (tickets[id].pizzas || 0) + (Number(r[COL.qty]) || 0);
   });
 
@@ -953,12 +955,16 @@ function readCancelledStats(ss, mKey) {
 }
 
 // Suivi HACCP du mois : jours réellement relevés par enceinte (onglets « 🌡️ … »).
-function tempMonthStats(ss, mKey) {
+// `joursCibles` = les soirs RÉELLEMENT travaillés. Compter sur les jours calendaires
+// pénaliserait les week-ends non travaillés et afficherait un sans-faute en orange.
+function tempMonthStats(ss, mKey, joursCibles) {
+  const cible = {};
+  (joursCibles || []).forEach(k => { cible[k] = 1; });
   return ss.getSheets().filter(s => s.getName().indexOf('🌡️ ') === 0).map(sh => {
     const days = {};
     sh.getDataRange().getValues().slice(1).forEach(r => {
       const k = dateKey(r[0]);
-      if (k.slice(0, 7) === mKey && r[1] !== '' && r[1] != null) days[k] = 1;
+      if (k.slice(0, 7) === mKey && r[1] !== '' && r[1] != null && cible[k]) days[k] = 1;
     });
     return { name: sh.getName().replace('🌡️ ', ''), done: Object.keys(days).length };
   });
@@ -1086,7 +1092,8 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   // CA par catégorie (avec évolution)
   const catCA = {}, catCAP = {}, catQty = {};
-  ln.forEach(l => { add(catCA, l.cat, l.sub); add(catQty, l.cat, l.qty); });
+  // Quantités hors offerts : sinon une catégorie peut afficher « 22 vendus » pour 0 € de CA.
+  ln.forEach(l => { add(catCA, l.cat, l.sub); if (!isOffert(l.art)) add(catQty, l.cat, l.qty); });
   lnP.forEach(l => add(catCAP, l.cat, l.sub));
 
   // Article star par catégorie
@@ -1102,23 +1109,32 @@ function deliverMonthlyReport(mKey, upToDay) {
     return { cat: cat, art: best[0], qty: best[1].qty, ca: best[1].ca };
   }).sort((a, b) => b.ca - a.ca);
 
-  // Taux d'attachement (avec rappel du mois précédent)
-  const attachOf = (tkX) => [
+  // Taux d'attachement (avec rappel du mois précédent). Les articles OFFERTS sont
+  // exclus : un dessert offert n'est pas un dessert vendu, et il gonflerait à la
+  // fois le taux et le gain chiffré du levier correspondant.
+  const catsPayees = lnX => {
+    const m = {};
+    lnX.forEach(l => { if (!isOffert(l.art)) (m[l.tid] = m[l.tid] || {})[l.cat] = true; });
+    return m;
+  };
+  const ATTACH_DEFS = [
     { label: '🥤 Boissons',    re: /boisson/i },
     { label: '🍮 Desserts',    re: /dessert/i },
     { label: '🧀 Suppléments', re: /supp/i },
-  ].map(d => {
-    const n = tkX.filter(t => Object.keys(t.cats || {}).some(c => d.re.test(c))).length;
+  ];
+  const catsM = catsPayees(ln), catsMP = catsPayees(lnP);
+  const attachOf = (tkX, cm) => ATTACH_DEFS.map(d => {
+    const n = tkX.filter(t => Object.keys(cm[t.id] || {}).some(c => d.re.test(c))).length;
     return { label: d.label, n: n, pct: tkX.length ? Math.round(n / tkX.length * 100) : 0 };
   });
-  const attach = attachOf(tk), attachP = attachOf(tkP);
+  const attach = attachOf(tk, catsM), attachP = attachOf(tkP, catsMP);
 
   // Gestes commerciaux & annulations
   const offertsQty = ln.filter(l => /\(offert/i.test(l.art)).reduce((a, l) => a + l.qty, 0);
   const cancelled  = readCancelledStats(ss, mKey);
 
   // Suivi HACCP
-  const temps = tempMonthStats(ss, mKey);
+  const temps = tempMonthStats(ss, mKey, dayKeys);
 
   // ══════════════════════════════════════════════════════════════════════════
   //  COUCHE BUSINESS INTELLIGENCE
@@ -1172,24 +1188,30 @@ function deliverMonthlyReport(mKey, upToDay) {
   const pz = {};
   ln.forEach(l => {
     if (!isPizzaCat(l.cat) || isOffert(l.art)) return;
-    const o = pz[l.art] || (pz[l.art] = { qty: 0, ca: 0 });
+    const o = pz[l.art] || (pz[l.art] = { qty: 0, ca: 0, size: /petite/i.test(l.cat) ? 'P' : 'G' });
     o.qty += l.qty; o.ca += l.sub;
   });
   const pzNames = Object.keys(pz);
   const pzTotQty = pzNames.reduce((a, n) => a + pz[n].qty, 0);
   const puOf     = n => pz[n].qty ? pz[n].ca / pz[n].qty : 0;
-  const seuilPop = pzNames.length ? 0.7 * pzTotQty / pzNames.length : 0;
   const pmp      = pzTotQty ? pzNames.reduce((a, n) => a + pz[n].ca, 0) / pzTotQty : 0;  // prix moyen pondéré
+  // Chaque pizza est comparée aux autres de SA TAILLE. Comparer une petite au prix
+  // moyen toutes tailles confondues la classerait d'office en « poids mort » :
+  // on mesurerait sa taille, pas sa performance.
+  const parTaille = { P: { qty: 0, ca: 0, n: 0 }, G: { qty: 0, ca: 0, n: 0 } };
+  pzNames.forEach(n => { const g = parTaille[pz[n].size]; g.qty += pz[n].qty; g.ca += pz[n].ca; g.n++; });
+  const seuilPopOf = s => parTaille[s].n  ? 0.7 * parTaille[s].qty / parTaille[s].n : 0;
+  const puMoyOf    = s => parTaille[s].qty ? parTaille[s].ca / parTaille[s].qty : 0;
   const pmpPrev  = prixMoyenCat(lnP, /petite|grande/i);
   const QUADRANTS = [
     { k: 'star',   t: '⭐ Tes stars',           aide: 'populaires ET bien valorisées : ne touche à rien, montre-les en photo.' },
-    { k: 'cheval', t: '🐴 Tes chevaux de labour', aide: 'ça se vend, mais ça rapporte peu : pousse la version grande ou un supplément.' },
+    { k: 'cheval', t: '🐴 Tes chevaux de labour', aide: 'ça se vend, mais ça rapporte moins que les autres de sa taille : c\'est là qu\'un supplément proposé à la commande change tout.' },
     { k: 'enigme', t: '❓ Tes énigmes',          aide: 'bien valorisées mais méconnues : cite-les quand on te demande conseil.' },
     { k: 'mort',   t: '⚓ Tes poids morts',      aide: 'ni populaires ni valorisées : candidates à la rotation de carte.' },
   ];
-  const quadrantOf = n => (pz[n].qty >= seuilPop)
-    ? (puOf(n) >= pmp ? 'star' : 'cheval')
-    : (puOf(n) >= pmp ? 'enigme' : 'mort');
+  const quadrantOf = n => (pz[n].qty >= seuilPopOf(pz[n].size))
+    ? (puOf(n) >= puMoyOf(pz[n].size) ? 'star' : 'cheval')
+    : (puOf(n) >= puMoyOf(pz[n].size) ? 'enigme' : 'mort');
   const menuMatrix = {};
   QUADRANTS.forEach(q => { menuMatrix[q.k] = []; });
   pzNames.forEach(n => menuMatrix[quadrantOf(n)].push(n));
@@ -1236,14 +1258,19 @@ function deliverMonthlyReport(mKey, upToDay) {
   const qtyGrandes = ln.filter(l => /grande/i.test(l.cat) && !isOffert(l.art)).reduce((a, l) => a + l.qty, 0);
   const partG = (qtyPetites + qtyGrandes) ? qtyGrandes / (qtyPetites + qtyGrandes) : 0;
 
-  // Étages de prix des grandes (détectés sur les prix constatés, jamais en dur).
-  let gBas = 0, gMed = 0, gHaut = 0;
+  // Étages de prix des grandes, déduits des prix RÉELLEMENT pratiqués : aucun seuil
+  // en dur, sinon une hausse de carte ferait basculer toute la carte en « haut de gamme ».
+  const prixG = {};
   ln.forEach(l => {
     if (!/grande/i.test(l.cat) || isOffert(l.art) || !l.qty) return;
-    const p = l.sub / l.qty;
-    if (p >= 13) gHaut += l.qty; else if (p >= 11) gMed += l.qty; else gBas += l.qty;
+    add(prixG, (Math.round(l.sub / l.qty * 100) / 100).toFixed(2), l.qty);
   });
-  const pctHaut = (gBas + gMed + gHaut) ? Math.round(gHaut / (gBas + gMed + gHaut) * 100) : 0;
+  const paliers = Object.keys(prixG).map(Number).sort((a, b) => a - b);
+  const gHaut  = paliers.length ? prixG[paliers[paliers.length - 1].toFixed(2)] : 0;
+  const gMed   = paliers.length >= 2 ? prixG[paliers[paliers.length - 2].toFixed(2)] : 0;
+  const pctHaut = qtyGrandes ? Math.round(gHaut / qtyGrandes * 100) : 0;
+  // Écart entre les deux paliers les plus chers : ce que rapporte une montée en gamme.
+  const marcheHaut = paliers.length >= 2 ? paliers[paliers.length - 1] - paliers[paliers.length - 2] : 0;
 
   // ── Ce que les clients achètent ENSEMBLE ───────────────────────────────────
   const pairs = {};
@@ -1282,7 +1309,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   [1, 2, 3, 4, 5].forEach(g => {
     const T = tk.filter(t => t.date.getDay() === g);
     if (T.length < 20) return;                                  // effectif trop faible
-    const p = re => Math.round(T.filter(t => Object.keys(t.cats || {}).some(c => re.test(c))).length / T.length * 100);
+    const p = re => Math.round(T.filter(t => Object.keys(catsM[t.id] || {}).some(c => re.test(c))).length / T.length * 100);
     attachByDay.push({ g: g, city: FB_SCHEDULE[g].city, n: T.length,
       boissons: p(/boisson/i), desserts: p(/dessert/i), supp: p(/supp/i) });
   });
@@ -1322,16 +1349,17 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   const caByMonth = {};
   stats.tickets.forEach(t => add(caByMonth, t.dKey.slice(0, 7), t.total));
-  const moisComplets = Object.keys(caByMonth).filter(k => k < mKey).map(k => caByMonth[k]);
-  const meilleurMois = moisComplets.length ? Math.max.apply(null, moisComplets) : 0;
+  // Record connu, MOIS EN COURS COMPRIS : sinon on peut annoncer « au-dessus de ton
+  // meilleur mois » un objectif inférieur au mois qu'on vient de présenter.
+  const recordConnu = Math.max.apply(null, Object.keys(caByMonth).filter(k => k <= mKey).map(k => caByMonth[k]).concat([0]));
   // L'objectif se mesure APRÈS la projection : le mois prochain n'a pas forcément
   // le même nombre de soirées, et dépasser son mois précédent grâce au seul
-  // calendrier ne serait pas une performance. On vise donc la projection + 5 %.
-  const objectif = (upToDay || !projNext.soirees) ? 0
-    : Math.round(Math.max(projNext.ca * 1.05, meilleurMois) / 10) * 10;
+  // calendrier ne serait pas une performance. On vise donc la projection + 5 %,
+  // toujours — c'est la seule façon que la phrase soit vraie à tous les coups.
+  const objectif = (upToDay || !projNext.soirees) ? 0 : Math.round(projNext.ca * 1.05 / 10) * 10;
   const ecartObj      = objectif ? Math.max(0, objectif - projNext.ca) : 0;
   const objParSoiree  = (objectif && projNext.soirees) ? ecartObj / projNext.soirees : 0;
-  const objVentes     = (objParSoiree > 0 && panier) ? Math.ceil(objParSoiree / panier) : 0;
+  const objVentes     = (objParSoiree > 0 && panier) ? Math.max(1, Math.round(objParSoiree / panier)) : 0;
   // Même effort exprimé en boissons : « une boisson de plus toutes les N ventes ».
   const prixBoissonRef = prixMoyenCat(ln, /boisson/i) || 2.5;
   const boissonsParSoiree = objParSoiree > 0 ? objParSoiree / prixBoissonRef : 0;
@@ -1356,8 +1384,8 @@ function deliverMonthlyReport(mKey, upToDay) {
   const prixMoyS = prixMoyenCat(ln, /supp/i)    || 2;
 
   // Tickets pizza partis sans boisson : le gisement le plus concret du mois.
-  const sansBoisson = tk.filter(t => Object.keys(t.cats || {}).some(c => isPizzaCat(c))
-                                  && !Object.keys(t.cats || {}).some(c => /boisson/i.test(c))).length;
+  const sansBoisson = tk.filter(t => Object.keys(catsM[t.id] || {}).some(c => isPizzaCat(c))
+                                  && !Object.keys(catsM[t.id] || {}).some(c => /boisson/i.test(c))).length;
   // Cible = ton propre record communal, pas un chiffre de manuel.
   const recordB = attachByDay.length ? Math.max.apply(null, attachByDay.map(x => x.boissons)) : 0;
   const cibleB  = Math.max(aB.pct + 10, recordB);
@@ -1387,7 +1415,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   });
   if (pctHaut < 40 && gMed > 0) act({
     cat: 'Grandes', emoji: '⭐',
-    constat: `seulement ${pctHaut}% de tes grandes sont des recettes du haut de carte`,
+    constat: `seulement ${pctHaut}% de tes grandes sont vendues au prix le plus haut de ta carte`,
     phrase: 'citer une recette du haut de carte quand on te demande conseil',
     gainEur: gMed * 0.10 * 2
   });
@@ -1413,17 +1441,21 @@ function deliverMonthlyReport(mKey, upToDay) {
   const bestCom  = wdRows.length ? wdRows.reduce((a, b) => b.caMoy > a.caMoy ? b : a) : null;
   if (worstCom && bestCom && wdRows.length >= 2 && worstCom.caMoy < bestCom.caMoy * 0.7) act({
     cat: 'transverse', emoji: '📣',
-    constat: `${worstCom.city} fait ${Math.round((1 - worstCom.caMoy / bestCom.caMoy) * 100)}% de CA de moins par soirée que ${bestCom.city}`,
-    phrase: `poster deux fois sur Facebook le ${worstCom.jour.toLowerCase()} (11h30 et 17h30)`,
+    constat: `${worstCom.city} tourne à ${fmt(worstCom.caMoy)} la soirée quand la médiane de ta tournée est à ${fmt(medianeCommune)}`,
+    phrase: `poster deux fois sur Facebook le ${worstCom.jour.toLowerCase()} (11h30 et 17h30) pour aller chercher un quart de cet écart`,
     // Hypothèse prudente : combler un QUART de l'écart avec la médiane de la
     // tournée. Viser tout l'écart d'un coup ne serait pas honnête.
     gainEur: Math.max(0, medianeCommune - worstCom.caMoy) * worstCom.soirees * 0.25
   });
+  // Gain de CONFORT, pas de chiffre d'affaires : annoncer le créneau creux déplace
+  // des commandes du rush vers 18h30, ça n'en crée pas. On ne le chiffre donc pas
+  // en euros — l'annoncer comme un gain gonflerait le plan d'action à tort.
   if (caTot && caAvant19 / caTot < 0.20) act({
     cat: 'transverse', emoji: '⏰',
-    constat: `avant 19h tu ne fais que ${Math.round(caAvant19 / caTot * 100)}% de ton CA`,
+    constat: `avant 19h tu ne fais que ${Math.round(caAvant19 / caTot * 100)}% de ton CA, alors que le four est déjà chaud`,
     phrase: 'annoncer « commande avant 19h, récupère sans attendre »',
-    gainEur: 0.5 * joursActifs * panier
+    gainEur: 0,
+    benefice: 'tu étales ton coup de feu — le CA déplacé n\'est pas du CA en plus, ce qu\'on mesurera le mois prochain c\'est si la courbe s\'est aplatie'
   });
   if (gros.length >= 8) act({
     cat: 'transverse', emoji: '👥',
@@ -1433,7 +1465,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   });
   if (nbTk && offertsQty / nbTk < 0.01) act({
     cat: 'transverse', emoji: '💳',
-    constat: `${offertsQty} article${offertsQty > 1 ? 's' : ''} offert${offertsQty > 1 ? 's' : ''} sur ${nbTk} ventes : ta carte de fidélité dort`,
+    constat: `ta carte de fidélité dort — ${offertsQty} article${offertsQty > 1 ? 's' : ''} offert${offertsQty > 1 ? 's' : ''} sur ${nbTk} ventes`,
     phrase: 'donner la carte en main propre, premier tampon déjà coché',
     gainEur: Math.max(0, 5 * panier - (prixMoyenCat(ln, /grande/i) || 12))
   });
@@ -1474,7 +1506,10 @@ function deliverMonthlyReport(mKey, upToDay) {
   // Encadré de mise en avant (constat + action).
   const box = (inner, bg, brd) => `<div style="background:${bg || '#fff6e6'};border-left:4px solid ${brd || C.brand};border-radius:8px;padding:12px 16px;margin:10px 0;font-size:13px;line-height:1.6;color:#333">${inner}</div>`;
   const note = t => `<p style="font-size:11px;color:#999;margin:6px 0 0;line-height:1.5">${t}</p>`;
-  const gain = n => `<b style="color:${C.green}">+${fmt(n)}/mois</b>`;
+  // En mode aperçu, tous les agrégats portent sur un mois PARTIEL : afficher
+  // « /mois » sous-estimerait chaque gain sans le dire.
+  const parMois = upToDay ? ' sur la période' : '/mois';
+  const gain = n => `<b style="color:${C.green}">+${fmt(n)}${parMois}</b>`;
   // Titre de grande partie : structure le rapport en chapitres lisibles.
   const part = (t, sub) => `<div style="margin:34px 0 6px;padding:10px 14px;background:${C.brand};color:#fff;border-radius:8px">
        <div style="font-size:15px;font-weight:800">${t}</div>${sub ? `<div style="font-size:11.5px;opacity:.85;margin-top:2px">${sub}</div>` : ''}</div>`;
@@ -1491,7 +1526,7 @@ function deliverMonthlyReport(mKey, upToDay) {
     `<div style="margin:5px 0">🥇 <b>Ta meilleure soirée :</b> ${dayLabel(byDay[bestDayK].date)}${FB_SCHEDULE[byDay[bestDayK].date.getDay()] ? ' à ' + FB_SCHEDULE[byDay[bestDayK].date.getDay()].city : ''} — ${fmt(byDay[bestDayK].ca)}</div>` +
     (objectif ? `<div style="margin:5px 0">🎯 <b>Ton objectif ${moisDe(nKey)} : ${fmt(objectif)}</b>${objVentes > 0 ? ` — soit ${plur(objVentes, 'vente')} de plus par soirée` : ''}</div>` : '') +
     (projReste ? `<div style="margin:5px 0">🔮 <b>Au rythme actuel, le mois finira vers ${fmt(caTot + projReste.ca)}</b> (${plur(projReste.soirees, 'soirée')} restantes)</div>` : '') +
-    (actionsFortes.length > 1 ? `<div style="margin:8px 0 0;font-size:12px;color:#777">Le plan complet, catégorie par catégorie, est plus bas : ${fmt(totalGain)} par mois si tu tiens les 5 premières actions.</div>` : '')
+    (actionsFortes.length > 1 ? `<div style="margin:8px 0 0;font-size:12px;color:#777">Le plan complet, catégorie par catégorie, est plus bas : ${fmt(totalGain)}${upToDay ? ' sur la période' : ' par mois'} si tu tiens les 5 premières actions.</div>` : '')
   );
 
   html += part('📊 1. Ta performance du mois', 'les chiffres qui pilotent, comparés au mois précédent');
@@ -1515,12 +1550,12 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   // L'équation du CA : trois manettes, et une seule est gratuite.
   html += sec('🧮 Ton CA en une équation', box(
-    `<div style="font-size:14px;margin-bottom:8px"><b>${plur(joursActifs, 'soirée')} × ${(Math.round(tkParSoiree * 10) / 10).toString().replace('.', ',')} ventes × ${fmt(panier)} = ${fmt(caTot)}</b></div>` +
+    `<div style="font-size:14px;margin-bottom:8px"><b>${plur(joursActifs, 'soirée')} × ${tkParSoiree.toFixed(1).replace('.', ',')} ventes × ${fmt(panier)} ≈ ${fmt(caTot)}</b></div>` +
     `Tu n'as que trois manettes pour faire grandir ce chiffre :<br>` +
     `➕ 1 vente de plus par soirée = ${gain(sensTicket)}<br>` +
     `➕ 1 € de panier moyen = ${gain(sensPanier)}<br>` +
     `➕ 1 soirée de plus = ${gain(sensSoiree)}<br>` +
-    `<span style="color:#777">La seule qui ne demande ni plus d'heures ni plus de kilomètres, c'est le panier : c'est tout l'objet du plan d'action plus bas.</span>`
+    `<span style="color:#777">Les deux premières ne demandent ni plus d'heures ni plus de kilomètres — c'est tout l'objet du plan d'action plus bas.</span>`
   ));
 
   // Tendance intra-mois : le mois accélère ou s'essouffle.
@@ -1546,7 +1581,7 @@ function deliverMonthlyReport(mKey, upToDay) {
       `<tr>${th('Soirée')}${th('Au rythme de ce mois')}${th('Total')}</tr>` + detailProj +
       `<tr>${td('<b>Projection</b>', 1)}${td(plur(projNext.soirees, 'soirée'))}${td('<b>' + fmt(projNext.ca) + '</b>', 1)}</tr>`) +
       (objectif ? box(
-        `🎯 <b>Ton objectif : ${fmt(objectif)}</b> — la projection ci-dessus, dépassée de 5%${meilleurMois && objectif >= meilleurMois ? `, et au-dessus de ton meilleur mois (${fmt(meilleurMois)})` : ''}. ` +
+        `🎯 <b>Ton objectif : ${fmt(objectif)}</b> — la projection ci-dessus, dépassée de 5%${objectif > recordConnu ? `, ce qui ferait de ${moisNom(nKey)} ton meilleur mois` : objectif < caTot ? ` — moins que ce mois-ci, tout simplement parce que ${moisNom(nKey)} compte ${plur(projNext.soirees, 'soirée')} de tournée contre ${joursActifs}` : ''}. ` +
         (objParSoiree > 0
           ? `L'effort réel, c'est <b>${fmt(objParSoiree)} de plus par soirée</b> — concrètement ${plur(objVentes, 'vente')} de plus${boissonsPourObjectif >= 3 ? `, ou une boisson vendue sur ${plur(boissonsPourObjectif, 'vente')}` : ''}. Le récap du mois prochain te dira si tu l'as tenu.`
           : `Tu es déjà au-dessus : l'enjeu du mois prochain, c'est de tenir ce niveau.`)) : '') +
@@ -1585,7 +1620,7 @@ function deliverMonthlyReport(mKey, upToDay) {
     `<tr>${th('Tranche')}${th('Ventes')}${th('Part')}${th('CA')}${th('')}</tr>` +
     distPanier.map(d => `<tr>${td(d.lab)}${td(d.n)}${td(pctStr(d.n, nbTk))}${td(fmt(d.ca), 1)}<td style="padding:7px 10px;border-bottom:1px solid ${C.line};width:22%">${bar(d.n, maxDistN)}</td></tr>`).join('')) +
     box(`🎯 <b>La moitié de tes ventes font moins de ${fmt(medianePanier)}</b> — ta moyenne de ${fmt(panier)} est tirée vers le haut par les grosses commandes, c'est la médiane qu'il faut regarder. ` +
-        (distPanier[0].n ? `${distPanier[0].n} ventes sont sous 12 € : ce sont les « pizza seule », et c'est exactement à ces clients-là que s'adressent tes questions à l'encaissement — en convertir un sur cinq à une boisson vaut ${gain(distPanier[0].n * 0.20 * (prixMoyenCat(ln, /boisson/i) || 2.5))}.` : '')));
+        (distPanier[0].n ? `${distPanier[0].n} ventes sont sous 12 € : ce sont tes plus petits tickets, souvent une pizza seule — et c'est exactement à ces clients-là que s'adressent tes questions à l'encaissement — en faire repartir un sur cinq avec une boisson vaut ${gain(distPanier[0].n * 0.20 * (prixMoyenCat(ln, /boisson/i) || 2.5))}.` : '')));
 
   // Taille des tickets : le mono-article est la réserve la plus visible.
   html += sec('🔢 Combien d\'articles par vente ?', tbl(
@@ -1621,19 +1656,22 @@ function deliverMonthlyReport(mKey, upToDay) {
         <div style="font-weight:700;color:${C.brand};font-size:13.5px">${q.t}</div>
         <div style="font-size:12.5px;color:#333;margin:4px 0">${list.slice(0, 4).map(n => `${n} <span style="color:#888">(${pz[n].qty} vendues à ${fmt(puOf(n))})</span>`).join(' · ')}</div>
         <div style="font-size:12px;color:${C.green};font-style:italic">👉 ${q.aide}</div></div>`;
-    }).join('') + note(`Faute de coûts d'ingrédients dans la caisse, c'est le prix de vente moyen (${fmt(pmp)}) qui sert de repère de valeur, et ${Math.round(seuilPop)} ventes de seuil de popularité. À pâte égale, une pizza à 14 € laisse plus qu'une à 9 €.`));
+    }).join('') + note(`Chaque pizza est comparée aux autres de SA taille — une petite avec les petites, une grande avec les grandes — sur les quantités vendues et sur le prix. Faute de connaître tes coûts d'ingrédients, c'est le prix de vente qui sert de repère de valeur : à pâte égale, une pizza à 14 € laisse plus qu'une à 9 €.`));
   }
 
   // Pareto : la carte utile et la carte qui dort.
   if (triPizza.length >= 5) html += sec('📇 Ta carte en une phrase', box(
-    `<b>${n80} recettes font 80% de ton CA pizza</b> sur les ${triPizza.length} que tu proposes.` +
+    `<b>${n80} références font 80% de ton CA pizza</b>, sur les ${triPizza.length} que tu proposes (soit ${Object.keys(mix).length} recettes, une fois les deux tailles regroupées).` +
     (mortes.length ? ` À l'autre bout, ${plur(mortes.length, 'recette')} pèse${mortes.length > 1 ? 'nt' : ''} moins de 0,5% du CA chacune — dont « ${mortes[mortes.length - 1][0]} » (${fmt(mortes[mortes.length - 1][1])} sur le mois).` : '') +
-    `<br><span style="color:#777">Une carte plus courte, c'est moins de stock qui dort, un service plus rapide au coup de feu, et un client qui choisit plus vite. Remplacer la dernière par une « pizza du mois » en édition limitée garde le même nombre de références tout en créant de la nouveauté.</span>`));
+    `<br><span style="color:#777">Une carte plus courte, c'est moins de stock qui dort, un service plus rapide au coup de feu, et un client qui choisit plus vite. Si tu veux raccourcir sans appauvrir : sors ta recette la moins vendue et mets une « pizza du mois » en édition limitée à sa place.</span>`));
 
   // Petite ou Grande : le trading-up recette par recette.
   if (mixRows.length >= 3 && ecartPG > 0) {
-    const sousMed = mixRows.filter(r => r.pctG < pctGMed);
-    const gainMix = sousMed.reduce((a, r) => a + (pctGMed - r.pctG) / 100 * (r.p + r.g) * ecartPG, 0);
+    // Uniquement les recettes réellement proposées dans les DEUX tailles : sinon on
+    // chiffrerait la montée en gamme d'une pizza qui n'existe pas en grande.
+    // Et on ne vise qu'un quart de l'écart, comme partout ailleurs dans ce rapport.
+    const sousMed = mixRows.filter(r => r.pctG < pctGMed && r.g > 0 && r.p > 0);
+    const gainMix = sousMed.reduce((a, r) => a + (pctGMed - r.pctG) / 100 * (r.p + r.g) * ecartPG, 0) * 0.25;
     html += sec('📏 Petite ou grande ? Recette par recette', tbl(
       `<tr>${th('Recette')}${th('Petites')}${th('Grandes')}${th('% en grande')}</tr>` +
       mixRows.map(r => `<tr style="${r.pctG < pctGMed ? 'background:#fff6e6' : ''}">${td(r.n)}${td(r.p)}${td(r.g)}${td(r.pctG + '%', 1)}</tr>`).join('')) +
@@ -1658,7 +1696,7 @@ function deliverMonthlyReport(mKey, upToDay) {
     topArts.map(e => {
       const prev = artCAP[e[0]] || 0;
       const ev = !tkP.length ? '—' : !prev ? 'nouveau'
-        : (e[1] >= prev ? '<span style="color:#2c6b2f;font-weight:700">▲ +' : '<span style="color:#9b2c1e;font-weight:700">▼ ') + Math.round((e[1] - prev) / prev * 100) + '%</span>';
+        : (e[1] >= prev ? '<span style="color:#2c6b2f;font-weight:700">▲ +' : '<span style="color:#9b2c1e;font-weight:700">▼ ') + Math.abs(Math.round((e[1] - prev) / prev * 100)) + '%</span>';
       return `<tr>${td(e[0])}${td(artQty[e[0]] || 0)}${td(fmt(e[1]), 1)}${td(ev)}</tr>`;
     }).join('')));
 
@@ -1689,7 +1727,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   if (topPairs.length) html += sec('🤝 Ce que tes clients commandent ensemble', tbl(
     `<tr>${th('Duo')}${th('Fois ensemble')}</tr>` +
     topPairs.map(e => `<tr>${td(e[0].replace(' + ', ' <span style="color:#999">+</span> '))}${td(e[1], 1)}</tr>`).join('')) +
-    box(`🤝 Ce sont tes <b>menus naturels</b> : ils existent déjà, tes clients les ont inventés tout seuls. Affiche ces duos côte à côte sur l'ardoise — pas besoin d'inventer un prix de menu, le simple fait de les montrer ensemble suffit à les faire commander plus souvent.`));
+    box(`🤝 Ce sont tes <b>duos les plus fréquents</b> — pour une bonne part, ta pizza la plus vendue et ta boisson la plus vendue qui se croisent. Rien à inventer : affiche-les côte à côte sur l'ardoise, le simple fait de les montrer ensemble suffit souvent à les faire commander.`));
 
   // Star par catégorie
   html += sec('🏅 L\'article star de chaque catégorie', tbl(
@@ -1698,11 +1736,11 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   // CA par catégorie
   html += sec('🍕 CA par catégorie', tbl(
-    `<tr>${th('Catégorie')}${th('Qté')}${th('CA')}${th('vs mois préc.')}</tr>` +
+    `<tr>${th('Catégorie')}${th('Qté vendue')}${th('CA')}${th('vs mois préc.')}</tr>` +
     sortDescByVal(catCA).map(e => {
       const prev = catCAP[e[0]] || 0;
       const ev = !tkP.length ? '—' : !prev ? 'nouveau'
-        : (e[1] >= prev ? '<span style="color:#2c6b2f;font-weight:700">▲ +' : '<span style="color:#9b2c1e;font-weight:700">▼ ') + Math.round((e[1] - prev) / prev * 100) + '%</span>';
+        : (e[1] >= prev ? '<span style="color:#2c6b2f;font-weight:700">▲ +' : '<span style="color:#9b2c1e;font-weight:700">▼ ') + Math.abs(Math.round((e[1] - prev) / prev * 100)) + '%</span>';
       return `<tr>${td(e[0])}${td(catQty[e[0]] || 0)}${td(fmt(e[1]), 1)}${td(ev)}</tr>`;
     }).join('')));
 
@@ -1731,15 +1769,15 @@ function deliverMonthlyReport(mKey, upToDay) {
   }
 
   // Post Facebook prêt à copier pour la commune la plus faible.
-  if (worstCom && FB_SCHEDULE[worstCom.g]) {
+  if (worstCom && wdRows.length >= 2 && FB_SCHEDULE[worstCom.g]) {
     const qLoc = {};
-    ln.forEach(l => { if (isPizzaCat(l.cat) && !isOffert(l.art) && l.date.getDay() === worstCom.g) add(qLoc, l.art, l.qty); });
+    ln.forEach(l => { if (isPizzaCat(l.cat) && !isOffert(l.art) && l.date.getDay() === worstCom.g) add(qLoc, baseName(l.art), l.qty); });
     const starLoc = sortDescByVal(qLoc)[0];
     const s = FB_SCHEDULE[worstCom.g];
     if (starLoc) html += sec(`📣 Ton post prêt à copier pour le ${worstCom.jour.toLowerCase()}`,
       `<div style="background:#fff;border:1px dashed ${C.brand};border-radius:8px;padding:14px 16px;font-family:Consolas,Monaco,monospace;font-size:12.5px;line-height:1.7;color:#333">
          📍 ${worstCom.jour} soir, La Casetta est à ${s.city} (${s.place}, ${s.hours}) !<br>
-         🍕 Ce mois-ci, votre chouchoute ici, c'était la ${baseName(starLoc[0])} — ${starLoc[1]} parties au four.<br>
+         🍕 Ce mois-ci, votre chouchoute ici, c'était la ${starLoc[0]} — ${starLoc[1]} parties au four.<br>
          👉 Ce ${worstCom.jour.toLowerCase()}, dites-nous « vu sur Facebook » au camion 😉<br>
          🗺️ ${s.map}
        </div>` +
@@ -1770,20 +1808,20 @@ function deliverMonthlyReport(mKey, upToDay) {
   const starB = starCatOf(/boisson/i), starD = starCatOf(/dessert/i), starS = starCatOf(/supp/i);
   html += blocCat('🥤', 'Boissons',
     `${pctStr(caCatOf(/boisson/i), caTot)} de ton CA · ${aB.pct}% des ventes · ${qtyCatOf(/boisson/i)} vendues`,
-    (sansBoisson ? `<b>${sansBoisson} tickets pizza sont partis sans boisson</b> — soit ${fmt(sansBoisson * prixMoyB)} qui dorment. ` : '') +
+    (sansBoisson ? `<b>${sansBoisson} tickets pizza sont partis sans boisson.</b> À ${fmt(prixMoyB)} la boisson, chaque tranche de 10 tickets que tu convertis, c'est ${fmt(10 * prixMoyB)} de plus dans ton mois. ` : '') +
     `Trois gestes qui ne coûtent rien :<br>` +
     `① le frigo <b>tourné vers la file</b>, porte visible AVANT que le client commande ;<br>` +
     `② la question ouverte à chaque encaissement — « <b>et comme boisson ?</b> », jamais « une boisson ? » qui appelle un non ;<br>` +
     `③ nomme ta star : ${starB ? `« ${starB[0]} » (${starB[1].qty} vendues)` : 'ta boisson la plus demandée'}.` +
-    (recordB > aB.pct ? `<br><span style="color:#777">Ta cible n'est pas un chiffre de manuel : c'est ton propre record, <b>${recordB}%</b> déjà atteint à ${attachByDay.filter(x => x.boissons === recordB)[0].city}.</span>` : ''),
+    `<br><span style="color:#777">Ta cible : <b>${cibleB}%</b>${recordB > aB.pct ? `, quand ${attachByDay.filter(x => x.boissons === recordB)[0].city} est déjà à ${recordB}% avec le même camion` : `, soit ${cibleB - aB.pct} points de plus qu'aujourd'hui`}.</span>`,
     'Boissons');
 
   html += blocCat('🍮', 'Desserts',
     `${pctStr(caCatOf(/dessert/i), caTot)} de ton CA · ${aD.pct}% des ventes · ${qtyCatOf(/dessert/i)} vendus`,
     `Le bon moment, ce n'est pas l'encaissement, c'est <b>la commande</b> : pendant que la pizza cuit, le client attend devant toi, disponible.<br>` +
-    `👉 « Je te mets ${starD ? `un ${starD[0].toLowerCase()}` : 'un dessert'} au frais pour la fin ? » — nommer le dessert vend deux fois mieux que le mot « dessert ».` +
+    `👉 « Je te mets ${starD ? `un ${starD[0].toLowerCase()}` : 'un dessert'} au frais pour la fin ? » — nommer le dessert marche bien mieux que le mot « dessert ».` +
     (starD ? `<br>C'est ta star : ${starD[1].qty} vendus ce mois-ci.` : '') +
-    `<br><span style="color:#777">Range-les à hauteur d'yeux près du passe, pas dans un frigo que personne ne voit. Ils sont déjà en stock : chaque dessert vendu est du CA quasi pur.</span>`,
+    `<br><span style="color:#777">Range-les à hauteur d'yeux près du passe, pas dans un frigo que personne ne voit. Ils sont déjà en stock et ne passent pas au four : c'est ce que tu vends sans travail en plus.</span>`,
     'Desserts');
 
   html += blocCat('🍕', 'Petites pizzas',
@@ -1795,7 +1833,7 @@ function deliverMonthlyReport(mKey, upToDay) {
     'Petites');
 
   html += blocCat('🧀', 'Grandes pizzas',
-    `${pctStr(caCatOf(/grande/i), caTot)} de ton CA · ${qtyGrandes} vendues (hors offertes) · ${pctHaut}% en haut de carte`,
+    `${pctStr(caCatOf(/grande/i), caTot)} de ton CA · ${qtyGrandes} vendues (hors offertes) · ${pctHaut}% en haut de carte${paliers.length ? ` (tes grandes à ${fmt(paliers[paliers.length - 1])})` : ''}`,
     `C'est ton cœur de chiffre d'affaires. Deux phrases suffisent à le faire grandir :<br>` +
     `① à chaque petite commandée : « <b>pour ${ecartPG > 0 ? fmt(ecartPG) : '3,00 €'} de plus, je te la fais en grande ?</b> »${ecartUniforme ? ' — c\'est le même écart sur toute ta carte' : ''} ;<br>` +
     `② quand on te demande « tu me conseilles quoi ? » : <b>cite une recette du haut de carte</b>. Jamais de remise dessus, juste de la lumière — c'est celle-là qu'il faut prendre en photo pour le post du jour.` +
@@ -1804,39 +1842,38 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   html += blocCat('➕', 'Suppléments',
     `${pctStr(caCatOf(/supp/i), caTot)} de ton CA · ${aS.pct}% des ventes · supplément moyen ${fmt(prixMoyS)}`,
-    `Ne demande <b>jamais</b> « un supplément ? » : la réponse est non. <b>Nomme-le selon la pizza</b> :<br>` +
-    `👉 Margherita → « je te rajoute le supplément fromages${prixMoyS ? ` (${fmt(prixMoyS)})` : ''} ? »<br>` +
-    `👉 Piccante → « un peu de salsiccia en plus ? »<br>` +
-    `Inutile sur une 4 Formaggi : vise les recettes simples, ce sont elles qui appellent un ajout.` +
-    (starS ? `<br>Ton supplément le plus pris : ${starS[0]} (${starS[1].qty} fois).` : '') +
-    `<br><span style="color:#777">100% de valeur ajoutée sur des pizzas déjà vendues — et un client qui « compose sa pizza » en parle autour de lui.</span>`,
+    `Ne demande <b>jamais</b> « un supplément ? » : la réponse est non. <b>Nomme-le</b>, et propose-le sur les recettes simples — ce sont elles qui appellent un ajout, pas une pizza déjà chargée.<br>` +
+    (starS && starS[1].qty
+      ? `👉 « Je te rajoute ${starS[0].toLowerCase()} (${fmt(starS[1].ca / starS[1].qty)}) ? » — c'est ton supplément le plus pris, ${starS[1].qty} fois ce mois-ci.<br>`
+      : '') +
+    `<span style="color:#777">De la garniture sur une pizza déjà vendue et déjà au four : le seul article que tu ajoutes sans travail en plus.</span>`,
     'Suppléments');
 
   // Les leviers transverses (communes, horaires, groupes, fidélité, carte).
-  const transverses = actOf('transverse').filter(a => a.gainEur >= 1);
+  const transverses = actOf('transverse').filter(a => a.gainEur >= 1 || a.benefice);
   if (transverses.length) html += sec('🔁 Et les leviers qui ne tiennent pas dans une seule catégorie',
     transverses.map(a => `<div style="background:#fff;border:1px solid ${C.line};border-radius:8px;padding:11px 14px;margin:7px 0;font-size:13px;line-height:1.6">
       ${a.emoji} <b>${a.constat.charAt(0).toUpperCase() + a.constat.slice(1)}</b><br>
-      <span style="color:${C.green}">🎯 ${a.phrase} → ${gain(a.gainEur)}</span></div>`).join(''));
+      <span style="color:${C.green}">🎯 ${a.phrase} → ${a.gainEur >= 1 ? gain(a.gainEur) : a.benefice}</span></div>`).join(''));
 
   // Le tableau de bord du plan : les 5 actions les plus rentables, dans l'ordre.
   if (actionsFortes.length) html += sec('🏁 Si tu ne retiens que 5 choses',
     tbl(`<tr>${th('#')}${th('L\'action')}${th('Ça rapporte')}</tr>` +
       actionsFortes.slice(0, 5).map((a, i) => `<tr>${td('<b>' + (i + 1) + '</b>')}${td(a.emoji + ' ' + a.phrase)}${td(fmt(a.gainEur), 1)}</tr>`).join('') +
-      `<tr style="background:#f2f6ec">${td('')}${td('<b>Total si tu tiens les cinq</b>', 1)}${td('<b>' + fmt(totalGain) + ' / mois</b>', 1)}</tr>`) +
+      `<tr style="background:#f2f6ec">${td('')}${td('<b>Total si tu tiens les cinq</b>', 1)}${td('<b>' + fmt(totalGain) + (upToDay ? ' sur la période' : ' / mois') + '</b>', 1)}</tr>`) +
     note('Estimations prudentes, calculées sur tes propres chiffres du mois et sur des taux de conversion volontairement bas. Les gains ne se cumulent qu\'une fois : les analyses par commune et par tranche de panier servent à cibler l\'effort, pas à additionner les euros. Le récap du mois prochain mesurera ce qui a bougé.'));
 
   // ══════════════════════════════════════════════════════════════════════════
   html += part('🔧 6. L\'opérationnel', 'encaissement, gestes commerciaux et obligations d\'hygiène');
 
   // Paiements
-  const pctE = Math.round(caEsp / caTot * 100);
+  const pctE = caTot ? Math.round(caEsp / caTot * 100) : 0;
   const tkCarte = tk.filter(t => t.pay !== 'especes'), tkEsp = tk.filter(t => t.pay === 'especes');
   html += sec('💳 Paiements', tbl(
     `<tr>${th('Mode')}${th('Montant')}${th('Part')}${th('Panier moyen')}${th('Mois préc.')}</tr>` +
     `<tr>${td('💶 Espèces')}${td(fmt(caEsp), 1)}${td(pctE + '%')}${td(tkEsp.length ? fmt(caEsp / tkEsp.length) : '—')}${td(caTotP ? Math.round(caEspP / caTotP * 100) + '%' : '—')}</tr>` +
     `<tr>${td('💳 Carte')}${td(fmt(caTot - caEsp), 1)}${td(100 - pctE + '%')}${td(tkCarte.length ? fmt((caTot - caEsp) / tkCarte.length) : '—')}${td(caTotP ? 100 - Math.round(caEspP / caTotP * 100) + '%' : '—')}</tr>`) +
-    note('Le panier carte est mécaniquement plus élevé : les grosses commandes se règlent naturellement par carte. Rien à en conclure, sinon qu\'un « CB acceptée, sans minimum » bien visible ne coûte rien.'));
+    note('Un ticket réglé en deux fois est compté entièrement côté carte : lis la part carte comme un maximum. Les grosses commandes se réglant plutôt par carte, l\'écart entre les deux paniers ne dit pas grand-chose — mais un « CB acceptée, sans minimum » bien visible ne coûte rien.'));
 
   // Attachement global
   html += sec('🧲 Taux d\'attachement', tbl(
@@ -1849,20 +1886,20 @@ function deliverMonthlyReport(mKey, upToDay) {
     `<tr>${td('🚫 Ventes annulées', 1)}${td(plur(cancelled.n, 'vente'))}${td(fmt(cancelled.ca))}</tr>`) +
     (nbTk && offertsQty / nbTk < 0.01
       ? box(`💳 <b>Ta carte de fidélité dort dans le tiroir</b> (${pctStr(offertsQty, nbTk)} de gestes seulement). Le geste qui change tout : donne-la <b>en main propre, premier tampon déjà coché</b>, à chaque ticket un peu généreux. Ça ne coûte rien ce soir, et un client encarté revient.`)
-      : note('Le taux de gestes commerciaux est le seul indicateur de fidélité mesurable sans fichier client : au-dessus de 1%, le programme vit.')));
+      : note('Un article offert, c\u0027est soit un geste de ta part, soit une pizza de fidélité gagnée : dans la caisse, les deux se ressemblent. Au-dessus de 1%, le programme tourne.')));
 
   // HACCP
   if (temps.length) html += sec('🌡️ Relevés de température (HACCP)', tbl(
     `<tr>${th('Enceinte')}${th('Jours relevés')}${th('')}</tr>` +
-    temps.map(t => `<tr>${td(t.name)}${td(t.done + ' / ' + dernierJour + ' jours', 1)}<td style="padding:7px 10px;border-bottom:1px solid ${C.line};width:30%">${bar(t.done, dernierJour, t.done >= dernierJour * 0.8 ? C.green : '#e0a93a')}</td></tr>`).join('')) +
-    note('Jours sans activité compris — l\'important est la régularité les soirs travaillés.'));
+    temps.map(t => `<tr>${td(t.name)}${td(t.done + ' / ' + plur(joursActifs, 'soirée'), 1)}<td style="padding:7px 10px;border-bottom:1px solid ${C.line};width:30%">${bar(t.done, joursActifs, t.done >= joursActifs * 0.9 ? C.green : '#e0a93a')}</td></tr>`).join('')) +
+    note('Seuls les soirs où le camion a tourné sont comptés : les jours sans service ne peuvent pas te pénaliser.'));
 
   // ══════════════════════════════════════════════════════════════════════════
   html += part(`🚀 7. À tester en ${moisNom(nKey)}`, 'les idées du mois prochain, tirées de tes chiffres et du calendrier');
 
+  // Uniquement ce qui n'a PAS déjà été dit dans le plan d'action ci-dessus :
+  // reprendre mot pour mot les leviers déjà affichés n'apporterait rien.
   const idees = [];
-  // Les leviers qui n'ont pas tenu dans le top 5 : rien ne se perd.
-  actionsFortes.slice(5).forEach(a => idees.push(`${a.emoji} <b>${a.constat.charAt(0).toUpperCase() + a.constat.slice(1)}</b> → ${a.phrase} (${fmt(a.gainEur)} par mois).`));
   // Rendez-vous du calendrier croisés avec la tournée : date ET commune.
   eventsOfMonth(nKey).forEach(e => idees.push(
     `🗓️ <b>${JOURS[e.g].toLowerCase()} ${e.d} ${moisNom(nKey)}</b> — ${e.txt} C'est ton soir à <b>${e.city}</b> : prévois le post trois jours avant.`));
