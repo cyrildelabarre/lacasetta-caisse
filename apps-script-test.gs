@@ -515,11 +515,11 @@ function sheetRecommandations(ss, stats) {
 }
 
 // ════════════════════════════════════════════
-//  EMAIL HEBDOMADAIRE
+//  DESTINATAIRES DES E-MAILS RÉCAP
 // ════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DESTINATAIRES & SECTIONS DES E-MAILS RÉCAP (quotidien + hebdo)
+//  DESTINATAIRES & SECTIONS DU RÉCAP QUOTIDIEN
 //
 //  Chaque destinataire reçoit SON e-mail, composé uniquement des sections
 //  mises à true. Mets false pour masquer une section chez ce destinataire.
@@ -559,20 +559,6 @@ const RECIPIENTS = [
       starParCategorie: true, topArticles: true, flopArticles: true,
       attachement: true, panierMoyen: true, ventesDetail: true, recommandations: true } },
 ];
-
-// Récap hebdo (7 derniers jours).
-function sendWeeklyReport() {
-  const stats = computeStats(readValidatedRows(getOrCreateSpreadsheet()));
-  const now = new Date();
-  const within7 = d => (now - d) / 86400000 <= 7;
-  buildAndSendReport(
-    stats.tickets.filter(t => within7(t.date)),
-    stats.lines.filter(l => within7(l.date)),
-    { titleLabel:'Récap de la semaine', recoTitle:'Recommandations de la semaine',
-      subjectKind:'Récap semaine', whenText:'Email automatique envoyé chaque vendredi soir.',
-      periode:`${Utilities.formatDate(new Date(now-7*86400000), TZ, 'dd/MM')} – ${Utilities.formatDate(now, TZ, 'dd/MM/yyyy')}`,
-      emptyKind:'aucune vente cette semaine' });
-}
 
 // Récap du jour (ventes du jour même).
 function sendDailyReport() {
@@ -829,16 +815,6 @@ function buildAndSendReport(tk, ln, opts) {
     const inner = ORDER.filter(k => cfg[k] !== false && S[k]).map(k => S[k]).join('');
     MailApp.sendEmail({ to: rcpt.email, subject: subject, htmlBody: wrap(inner) });
   });
-}
-
-// À EXÉCUTER UNE FOIS depuis l'éditeur : programme l'envoi chaque vendredi à 22h.
-function createWeeklyTrigger() {
-  if (TEST_MODE) return;  // pas de rapport hebdo en mode test
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'sendWeeklyReport') ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger('sendWeeklyReport')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(22).nearMinute(0).create();
 }
 
 // Le récap du jour est désormais envoyé AUTOMATIQUEMENT ~2 min après la dernière vente
