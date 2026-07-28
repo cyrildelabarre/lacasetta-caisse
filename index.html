@@ -560,9 +560,30 @@
     <div class="modal modal-sm">
       <h3>Annuler la transaction ?</h3>
       <p>Cette action est irréversible dans le mémo du jour.</p>
+      <label class="ann-label">Raison de l'annulation</label>
+      <div class="reason-chips" id="cancel-reasons"></div>
+      <label class="ann-label">Note / commentaire (facultatif)</label>
+      <textarea id="cancel-note" class="ann-note" rows="2" placeholder="Précision libre…"></textarea>
+      <p class="ann-sheet-hint">☁️ La raison et la note seront aussi enregistrées dans Google Sheets.</p>
       <div class="modal-actions">
         <button class="btn-ghost" id="btn-cancel-no">Non</button>
         <button class="btn-danger" id="btn-cancel-yes">Oui, annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal éditer / annoter une vente (raison + note, sans annuler) -->
+  <div class="modal-overlay" id="modal-annotate-tx">
+    <div class="modal modal-sm">
+      <h3>📝 Éditer / annoter la vente</h3>
+      <label class="ann-label">Raison de modification</label>
+      <div class="reason-chips" id="annotate-reasons"></div>
+      <label class="ann-label">Note / commentaire (facultatif)</label>
+      <textarea id="annotate-note" class="ann-note" rows="3" placeholder="Commentaire libre sur cette vente…"></textarea>
+      <p class="ann-sheet-hint">☁️ Enregistré aussi dans Google Sheets (onglet « Annotations »).</p>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-annotate-cancel">Fermer</button>
+        <button class="btn-primary" id="btn-annotate-save">Enregistrer</button>
       </div>
     </div>
   </div>

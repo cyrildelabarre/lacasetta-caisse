@@ -290,6 +290,30 @@ function getTransactions() { return LS.get(txKey(), []); }
 let txsRev = 0;   // incrémenté à chaque écriture locale — invalide le cache de reportSource()
 function saveTransactions(txs) { txsRev++; return LS.set(txKey(), txs); }
 
+// ── Raisons de modification / annulation (choix rapide) ──────────────────────
+const TX_REASONS = [
+  'Erreur de saisie', 'Erreur de prix', 'Client a changé d\'avis',
+  'Article manquant/épuisé', 'Erreur de paiement', 'Geste commercial'
+];
+
+// ── Annotations (raison + note) par transaction ──────────────────────────────
+// Stockées À PART des ventes, dans un canal dédié : une raison ou une note peut
+// être ajoutée APRÈS que la vente soit remontée dans le Sheet. La feuille
+// « Transactions » n'est JAMAIS modifiée (ajouter une colonne l'archiverait et
+// repartirait de zéro) ; tout arrive dans l'onglet « 🗒️ Annotations », indexé
+// par ID de vente, exactement comme les sauvegardes Clients / Clôtures.
+function annotationsKey()  { return isTestMode() ? 'pos_annotations_test' : 'pos_annotations'; }
+function getAnnotations()  { return LS.get(annotationsKey(), {}); }
+function getAnnotation(id) { return getAnnotations()[id] || null; }
+function setAnnotation(id, reason, note) {
+  const all = getAnnotations();
+  const r = (reason || '').trim(), n = (note || '').trim();
+  if (!r && !n) delete all[id];                                  // tout effacé → on retire l'annotation
+  else all[id] = { reason: r, note: n, updatedAt: new Date().toISOString() };
+  LS.set(annotationsKey(), all);
+  pushAnnotations();
+}
+
 function addTransaction(tx) {
   // Une vente créée SANS jeton sur l'appareil ne sera JAMAIS envoyée à Google
   // Sheets, même si un jeton est saisi plus tard : seuls les appareils
@@ -2451,6 +2475,11 @@ function renderMemo() {
       + (tx.localOnly ? '🛡️ <em>hors sync (créée sans jeton)</em> · ' : '')
       + (tx.discount && tx.discount.amount ? `🏷️ <em>remise −${fmtEur(tx.discount.amount)}</em> · ` : '')
       + tx.lines.map(l => `${emojiFor(l)}${escapeHtml(l.name)} ×${Math.abs(l.qty)}`).join(', ');
+    const ann = getAnnotation(tx.id);
+    const annStr = ann
+      ? `<div class="memo-ann">🗒️ ${ann.reason ? `<strong>${escapeHtml(ann.reason)}</strong>` : ''}`
+        + `${ann.reason && ann.note ? ' — ' : ''}${ann.note ? escapeHtml(ann.note) : ''}</div>`
+      : '';
     const badge = tx.cancelled
       ? '<span class="badge-pay badge-annule">Annulé</span>'
       : `<span class="badge-pay badge-${tx.method}">${{especes:'💶 Espèces', carte:'💳 Carte', mixte:'💶+💳 Mixte'}[tx.method] ?? tx.method}</span>`;
@@ -2459,7 +2488,7 @@ function renderMemo() {
     tr.innerHTML = `
       <td class="${cls}">${txs.length - i}</td>
       <td class="${cls}">${fmtTime(tx.date)}</td>
-      <td class="${cls}" style="max-width:260px;word-break:break-word">${linesStr}</td>
+      <td class="${cls}" style="max-width:260px;word-break:break-word">${linesStr}${annStr}</td>
       <td>${badge}</td>
       <td class="${cls}" style="font-weight:700">${fmtEur(tx.total)}</td>
       <td class="memo-actions">${tx.cancelled ? '' : `
@@ -2467,6 +2496,7 @@ function renderMemo() {
         ${tx.refundOf ? '' : `
         <button class="btn-reopen-tx" data-id="${tx.id}" title="Rouvrir : ajouter des articles à cette vente">🔁 <span>Complément</span></button>
         <button class="btn-refund-tx" data-id="${tx.id}" title="Rembourser tout ou partie de cette vente">↩</button>`}
+        <button class="btn-note-tx" data-id="${tx.id}" title="Éditer : raison de modification + note">📝</button>
         <button class="btn-del-tx" data-id="${tx.id}" title="Confirmer l'annulation">🗑️</button>`}</td>
     `;
     tbody.appendChild(tr);
@@ -2481,6 +2511,9 @@ function renderMemo() {
       openCancelModal(btn.dataset.id);
     });
   });
+  tbody.querySelectorAll('.btn-note-tx').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); openAnnotateModal(btn.dataset.id); });
+  });
   tbody.querySelectorAll('.btn-reopen-tx').forEach(btn => {
     btn.addEventListener('click', () => reopenTransaction(btn.dataset.id));
   });
@@ -2492,16 +2525,66 @@ function renderMemo() {
   });
 }
 
+// ── Raison + note : « chips » cliquables partagées par les 2 modaux ───────────
+// Un seul choix à la fois ; re-toucher la puce sélectionnée la désélectionne.
+function buildReasonChips(containerId, selected) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  c.innerHTML = TX_REASONS.map(r =>
+    `<button type="button" class="reason-chip${r === selected ? ' sel' : ''}" data-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>`
+  ).join('');
+  c.querySelectorAll('.reason-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const wasSel = chip.classList.contains('sel');
+      c.querySelectorAll('.reason-chip').forEach(x => x.classList.remove('sel'));
+      if (!wasSel) chip.classList.add('sel');
+    });
+  });
+}
+function selectedReason(containerId) {
+  const s = document.querySelector('#' + containerId + ' .reason-chip.sel');
+  return s ? s.dataset.reason : '';
+}
+
+// ── 📝 Modal « Éditer / annoter la vente » (raison + note, sans annuler) ──────
+let currentAnnotateTx = null;
+function openAnnotateModal(txId) {
+  currentAnnotateTx = txId;
+  const ann = getAnnotation(txId) || {};
+  buildReasonChips('annotate-reasons', ann.reason || '');
+  document.getElementById('annotate-note').value = ann.note || '';
+  document.getElementById('modal-annotate-tx').classList.add('open');
+}
+document.getElementById('btn-annotate-cancel').addEventListener('click', () => {
+  document.getElementById('modal-annotate-tx').classList.remove('open');
+});
+document.getElementById('btn-annotate-save').addEventListener('click', () => {
+  if (currentAnnotateTx) {
+    setAnnotation(currentAnnotateTx, selectedReason('annotate-reasons'), document.getElementById('annotate-note').value);
+  }
+  document.getElementById('modal-annotate-tx').classList.remove('open');
+  disarmMemoRows();
+  renderMemo();
+  showToast('Vente annotée. ☁️ Enregistrée aussi dans Google Sheets.');
+});
+
 // Cancel modal
 function openCancelModal(txId) {
   currentTx = txId;
+  const ann = getAnnotation(txId) || {};
+  buildReasonChips('cancel-reasons', ann.reason || '');
+  document.getElementById('cancel-note').value = ann.note || '';
   document.getElementById('modal-cancel-tx').classList.add('open');
 }
 document.getElementById('btn-cancel-no').addEventListener('click', () => {
   document.getElementById('modal-cancel-tx').classList.remove('open');
 });
 document.getElementById('btn-cancel-yes').addEventListener('click', () => {
-  if (currentTx) cancelTransaction(currentTx);
+  if (currentTx) {
+    // La raison / note choisie est conservée AVANT l'annulation, et remonte au Sheet.
+    setAnnotation(currentTx, selectedReason('cancel-reasons'), document.getElementById('cancel-note').value);
+    cancelTransaction(currentTx);
+  }
   document.getElementById('modal-cancel-tx').classList.remove('open');
   renderMemo();
   showToast('Transaction annulée.');
@@ -4467,10 +4550,26 @@ function pushClosures() {
     .catch(() => {});
 }
 
+// Raisons + notes de vente → onglet « 🗒️ Annotations » (indexé par ID de vente).
+// On pousse la carte complète à chaque changement (petit volume), comme les
+// clients : simple et idempotent côté Sheet (upsert par ID).
+function pushAnnotations() {
+  LS.set('pos_annotations_dirty', true);
+  if (!sheetsToken()) return;   // sans jeton : aucun envoi, partira une fois le jeton saisi
+  const all = getAnnotations();
+  const arr = Object.keys(all).map(id => ({ id, reason: all[id].reason, note: all[id].note, updatedAt: all[id].updatedAt }));
+  fetch(withToken(sheetsUrl()), { method: 'POST', body: JSON.stringify({ annotationsSync: arr }) })
+    .then(r => r.json())
+    .then(j => { if (j && j.ok) LS.set('pos_annotations_dirty', false);
+                 else if (j && j.error === 'unauthorized') notifyTokenRejected(); })
+    .catch(() => {});
+}
+
 // Relance des envois en attente (appelée par le filet 15 s, « online » et syncAll)
 function flushDirtyBackups() {
   if (LS.get('pos_clients_dirty', false)) pushClients();
   if (!isTestMode() && LS.get('pos_closures_dirty', false)) pushClosures();
+  if (LS.get('pos_annotations_dirty', false)) pushAnnotations();
 }
 
 // Lecture JSONP générique (les GET Apps Script passent par JSONP, pas de CORS)
@@ -4506,6 +4605,16 @@ function jsonpGet(action, onOk) {
       if (Array.isArray(data.closures) && data.closures.length && !getClosures().length) {
         LS.set(closuresKey(), data.closures);
         showToast(`☁️ ${data.closures.length} clôture(s) de caisse restaurée(s) depuis Google Sheets.`);
+      }
+    });
+  }
+  if (!isTestMode() && !Object.keys(getAnnotations()).length && !LS.get('pos_annotations_dirty', false)) {
+    jsonpGet('annotations', data => {
+      if (Array.isArray(data.annotations) && data.annotations.length && !Object.keys(getAnnotations()).length) {
+        const map = {};
+        data.annotations.forEach(a => { if (a.id) map[a.id] = { reason: a.reason || '', note: a.note || '', updatedAt: a.updatedAt || '' }; });
+        LS.set('pos_annotations', map);
+        if (typeof renderMemo === 'function') renderMemo();
       }
     });
   }
