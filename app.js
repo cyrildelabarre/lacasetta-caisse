@@ -102,6 +102,11 @@
 
   // Si déjà déverrouillé dans cette session
   if (sessionStorage.getItem('pos_unlocked') === '1') {
+    // .hidden EN PLUS de display:none : l'écouteur clavier physique ci-dessus se
+    // désactive sur `screen.classList.contains('hidden')`. Sans la classe, après un
+    // rechargement en session déverrouillée, taper des chiffres n'importe où (champ
+    // prix, remise…) construisait en douce un PIN caché et pouvait verrouiller la caisse.
+    screen.classList.add('hidden');
     screen.style.display = 'none';
   }
 
@@ -359,6 +364,10 @@ function saveArticles() {
 
 // Envoie tout le catalogue au Google Sheet (avec reprise si hors-ligne).
 async function pushCatalogue() {
+  // Ne JAMAIS pousser un catalogue vide : cela effacerait la carte partagée de tous
+  // les iPads (le backend refuse aussi, mais on n'émet même pas la requête, et on ne
+  // marque pas un « à renvoyer » qui bouclerait dans le vide au démarrage).
+  if (!Array.isArray(articles) || !articles.length) return;
   setCataloguePushPending(true);   // levé AVANT l'envoi : survit à une fermeture en plein vol
   if (!sheetsToken()) return;      // sans jeton : aucun envoi, partira une fois le jeton saisi
   const payload = {
@@ -432,6 +441,11 @@ function reopenTransaction(id) {
   editingOriginal = tx;
   ticket = [];
   exitOfferMode();
+  // Ré-associe le client d'origine : sinon le complément (clientId/fidélité) était
+  // rattaché au client COURANT (souvent aucun après réouverture), et les pizzas du
+  // complément n'étaient pas comptées pour le client. (Une vente rechargée du Sheet
+  // n'a pas de clientId — rien à ré-associer dans ce cas.)
+  setTicketClient(tx.clientId ? { id: tx.clientId, name: tx.clientName } : null);
   document.querySelector('.tab-btn[data-tab="caisse"]').click();
   renderEditBanner();
   renderTicket();
@@ -649,9 +663,9 @@ function renderDashboard() {
 
   const CAd = CA || 1;   // garde anti-NaN (journée où tout a été offert : CA = 0)
   const locRows = Object.entries(byLoc).sort((a, b) => b[1] - a[1]).map(([k, v], i) =>
-    ({ name: '📍 ' + k, right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CAd * 100)}%`, value: v, lead: i === 0 }));
+    ({ name: '📍 ' + escapeHtml(k), right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CAd * 100)}%`, value: v, lead: i === 0 }));
   const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v], i) =>
-    ({ name: k, right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CAd * 100)}%`, value: v, lead: i === 0 }));
+    ({ name: escapeHtml(k), right: `<b>${fmtEur(v)}</b> · ${Math.round(v / CAd * 100)}%`, value: v, lead: i === 0 }));
   const topArt = Object.entries(byArt).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const cartePct = Math.round(byPay.carte / CAd * 100);
@@ -1885,7 +1899,11 @@ function updateCashChange() {
 // ── Validate ──────────────────────────────────────────────────────────────────
 document.getElementById('btn-validate').addEventListener('click', () => {
   if (!ticket.length) { showToast('Aucun article dans le ticket.'); return; }
-  const total = ticketTotal();
+  // Arrondi au centime : une remise en % peut produire un flottant bruité
+  // (10 % de 23 € → 20,700000000000003). Les sous-totaux de lignes sont déjà
+  // arrondis (proration plus bas) ; on arrondit aussi le total pour que
+  // somme(lignes) et total du ticket se réconcilient au centime dans les rapports.
+  const total = Math.round(ticketTotal() * 100) / 100;
   if (payMethod === 'especes') {
     const given = parseMoney(document.getElementById('cash-given').value);
     if (given > 0 && given < total) { showToast('Montant insuffisant.'); return; }
@@ -3301,7 +3319,7 @@ function renderCaCategorie(txs) {
       <thead><tr><th>Catégorie</th><th>Qté</th><th>CA</th><th>Part</th><th>Prix moy.</th></tr></thead>
       <tbody>${rows.map(([c, v]) => `
         <tr>
-          <td>${c}</td>
+          <td>${escapeHtml(c)}</td>
           <td>${qty[c]}</td>
           <td style="font-weight:700">${fmtEur(v)}</td>
           <td>${Math.round(v / total * 100)}%</td>
@@ -3775,7 +3793,7 @@ function renderCaEmplacement(txs) {
       <thead><tr><th>Emplacement</th><th>CA</th><th>Part</th><th>Tickets</th><th>Jours</th><th>Moy/j</th></tr></thead>
       <tbody>${rows.map(([loc, v]) => `
         <tr>
-          <td>📍 ${loc}</td>
+          <td>📍 ${escapeHtml(loc)}</td>
           <td style="font-weight:700">${fmtEur(v.total)}</td>
           <td>${Math.round(v.total / grandTotal * 100)}%</td>
           <td>${v.n}</td>
@@ -4480,6 +4498,14 @@ function buildClosure() {
   };
 }
 document.getElementById('btn-closure-save').addEventListener('click', async () => {
+  // Espèces comptées obligatoires : sans elles, parseMoney('') = 0 et l'écart
+  // enregistré devient « il manque (fond + ventes espèces) » — un faux trou de
+  // caisse (ex. −350 €) sauvegardé et poussé dans le Sheet. Le total affiché sous
+  // le champ montre déjà l'attendu quand il est vide : on exige juste la saisie.
+  if (document.getElementById('closure-counted').value.trim() === '') {
+    showToast('Saisissez les espèces comptées avant de clôturer (0 si aucune).');
+    return;
+  }
   // Clôturer avec des ventes en attente reste possible (parfois il n'y a
   // simplement pas de réseau), mais plus en silence : le chiffre du Sheet
   // serait inférieur à celui de la clôture, sans que personne ne le sache.
