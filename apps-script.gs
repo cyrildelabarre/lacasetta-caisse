@@ -74,6 +74,10 @@ function getOrCreateTransactionsSheet(ss) {
     sheet.setFrozenRows(1);
     styleHeader(sheet, HEADERS.length, '#89310B');
     sheet.getRange('B2:B').setNumberFormat('dd/mm/yyyy');
+    // Colonne A (ID) en TEXTE : un id entièrement numérique (ex. « 92750418 »)
+    // serait sinon stocké comme NOMBRE par Sheets → le dédoublonnage et l'annulation
+    // (qui comparent des chaînes) le rateraient. Cf. normalisation String() plus bas.
+    sheet.getRange('A2:A').setNumberFormat('@');
   }
   return sheet;
 }
@@ -139,7 +143,10 @@ function computeStats(rows) {
       tickets[id] = {
         id:    id,
         total: Number(r[COL.total])||0,
-        pay:   r[COL.pay],
+        // On retire le marqueur de remboursement « ↩#… » : les stats des récaps
+        // comparent pay==='especes' — un remboursement doit rester classé sur sa
+        // méthode de base ('especes'/'carte'), comme avant l'ajout du marqueur.
+        pay:   String(r[COL.pay] || '').replace(/\s*↩#\S+\s*$/, ''),
         loc:   r[COL.loc] || '(non défini)',
         date:  asDate(r[COL.date]),
         dKey:  dayKey(r[COL.date]),
@@ -220,55 +227,90 @@ function insightLines(tk, ln) {
   const totalCA   = Object.values(artCA).reduce((a,b)=>a+b,0);
   const nbTx      = tk.length;
   const ticketMoy = nbTx ? totalCA/nbTx : 0;
+  // Nombre de jours DISTINCTS couverts : 1 = récap d'une soirée (envoyé le soir même),
+  // plusieurs = onglet Recommandations sur tout l'historique. Les analyses « jours de
+  // la semaine » et « moins vendu » n'ont de sens que sur plusieurs jours (sur une
+  // seule soirée, tout est le même jour et le classement du bas est du hasard).
+  const nbJours = new Set(tk.map(t => t.dKey)).size;
   const topArts = sortDescByVal(artCA), topHeure = sortDescByVal(heureCA);
   const topJour = sortDescByVal(jourCA), topCat   = sortDescByVal(catCA);
-  // « À surveiller » : on exclut les articles offerts (0 €), sinon ils trustent le
-  // bas du classement, ainsi que le top 3, sinon un même article pouvait être cité
-  // à la fois en top et en moins vendu.
-  const flopArts = topArts.slice(3).filter(e => !/\(offert/i.test(e[0]));
 
-  const f   = eurStr;
-  const pct = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
-  const g   = (arr,i)=> arr[i] ? arr[i][0] : '—';
-  const gv  = (arr,i)=> arr[i] ? arr[i][1] : 0;
+  const f    = eurStr;
+  const pct  = (a,b) => b ? Math.round(a/b*100)+'%' : '—';
+  const plur = (n,mot)=> n + ' ' + mot + (n>1?'s':'');
+  const g    = (arr,i)=> arr[i] ? arr[i][0] : '—';
+  const gv   = (arr,i)=> arr[i] ? arr[i][1] : 0;
 
-  return [
+  // « Moins vendus » PAR QUANTITÉ (hors offerts), en écartant le top 5 en CA affiché
+  // juste au-dessus : sans ça, un même article pouvait figurer en « top » ET en « flop ».
+  const topNames = new Set(topArts.slice(0,5).map(e => e[0]));
+  const flopArts = Object.keys(artQty)
+    .filter(a => !isOffert(a) && !topNames.has(a))
+    .map(a => [a, artQty[a]])
+    .sort((x,y) => x[1] - y[1]);
+
+  // Attachement (hors offerts) : part des tickets contenant boisson/dessert/supplément.
+  const byTid = {};
+  ln.forEach(l => { if (!isOffert(l.art)) (byTid[l.tid] = byTid[l.tid] || {})[l.cat] = true; });
+  const attachPct = re => nbTx ? Math.round(Object.values(byTid).filter(c => Object.keys(c).some(k => re.test(k))).length / nbTx * 100) : 0;
+  const cats = [
+    { nom:'une boisson',   re:/boisson/i, prix: prixMoyenCat(ln,/boisson/i) || 2.5 },
+    { nom:'un dessert',    re:/dessert/i, prix: prixMoyenCat(ln,/dessert/i) || 4 },
+    { nom:'un supplément', re:/supp/i,    prix: prixMoyenCat(ln,/supp/i)    || 2.5 },
+  ].map(c => ({ nom:c.nom, prix:c.prix, p: attachPct(c.re) }));
+  const faible  = cats.slice().sort((a,b) => a.p - b.p)[0];   // le plus gros levier
+  const horizon = nbJours > 1 ? 'sur la période' : 'sur une soirée comme celle-ci';
+
+  const out = [
     '━━━  🏆  ARTICLES : CE QUI MARCHE  ━━━',
-    `✅  Top 1 : ${g(topArts,0)} → ${f(gv(topArts,0))} de CA (${pct(gv(topArts,0),totalCA)} du CA total)`,
+    `✅  Top 1 : ${g(topArts,0)} → ${f(gv(topArts,0))} (${pct(gv(topArts,0),totalCA)} du CA)`,
     `✅  Top 2 : ${g(topArts,1)} → ${f(gv(topArts,1))}`,
     `✅  Top 3 : ${g(topArts,2)} → ${f(gv(topArts,2))}`,
-    `👉  Astuce : mets ces 3 articles en avant dans ta communication (Instagram, ardoise, bouche-à-oreille).`,
-    '━━━  📉  ARTICLES À SURVEILLER  ━━━',
-    ...(flopArts.length ? [
-      `⚠️  Moins vendu : ${g(flopArts,flopArts.length-1)} → ${f(gv(flopArts,flopArts.length-1))} (${artQty[g(flopArts,flopArts.length-1)]||0} vendus)`,
-    ].concat(flopArts.length > 1 ? [`⚠️  2e moins vendu : ${g(flopArts,flopArts.length-2)} → ${f(gv(flopArts,flopArts.length-2))}`] : [])
-     .concat([`👉  Astuce : envisage de retirer ces articles ou de les proposer en "offre du jour".`])
-    : ['✅  Rien à signaler : trop peu d\'articles distincts vendus sur la période.']),
-    '━━━  🍕  CATÉGORIES  ━━━',
-    ...topCat.map(([cat,ca],i) => `${i===0?'🥇':i===1?'🥈':'🥉'}  ${cat} → ${f(ca)} (${pct(ca,totalCA)})`),
-    `👉  Astuce : les suppléments représentent ${pct((catCA['Supp']||0)+(catCA['Suppléments']||0), totalCA)} du CA — propose-les systématiquement ("Vous voulez un supplément fromage ?").`,
-    '━━━  ⏰  HEURES DE POINTE  ━━━',
-    `🔥  Heure la plus chargée : ${g(topHeure,0)}h → ${f(gv(topHeure,0))}`,
-    `🔥  2e heure : ${g(topHeure,1)}h → ${f(gv(topHeure,1))}`,
-    `😴  Heure creuse : ${g(topHeure,topHeure.length-1)}h → ${f(gv(topHeure,topHeure.length-1))}`,
-    `👉  Astuce : prépare ta mise en place 30 min avant ${g(topHeure,0)}h.`,
-    '━━━  📆  JOURS DE LA SEMAINE  ━━━',
-    `📈  Meilleur jour : ${g(topJour,0)} → ${f(gv(topJour,0))} (${jourNb[g(topJour,0)]||0} tickets)`,
-    `📉  Jour le plus calme : ${g(topJour,topJour.length-1)} → ${f(gv(topJour,topJour.length-1))}`,
-    `👉  Astuce : concentre tes posts Instagram la veille de ton ${g(topJour,0)} pour maximiser la fréquentation.`,
-    '━━━  💳  PAIEMENTS  ━━━',
-    `💶  Espèces : ${nbEsp} tickets (${pct(nbEsp,nbTx)}) → ${f(caEsp)}`,
-    `💳  Carte : ${nbCarte} tickets (${pct(nbCarte,nbTx)}) → ${f(caCarte)}`,
-    `👉  Astuce : ${nbTx && nbCarte/nbTx > 0.6 ? 'La carte domine — garde ton terminal chargé et fonctionnel.' : 'Beaucoup d\'espèces — prévois assez de monnaie en début de service.'}`,
-    '━━━  💰  PANIER MOYEN  ━━━',
-    `📊  Ticket moyen : ${f(ticketMoy)}`,
-    `👉  Pour atteindre ${f(ticketMoy * 1.15)} (+15%) : propose un dessert ou un supplément à chaque commande.`,
-    `👉  Upselling : convertir 1 client sur 3 vers un dessert (${f(4)}) = +${f(nbTx/3*4)} de CA sur la période.`,
-    '━━━  📱  COMMUNICATION  ━━━',
-    `👉  Ton article star est "${g(topArts,0)}" — publie une belle photo sur Instagram.`,
-    `👉  Ton meilleur jour est ${g(topJour,0)} — programme tes stories la veille.`,
-    `👉  Fidélisation : envisage une carte de fidélité (ex. 10e pizza offerte).`,
+    `👉  Mets ces articles en avant sur ta page Facebook (photo, post du jour).`,
   ];
+
+  // Flop : seulement sur plusieurs jours (sur une soirée c'est du bruit).
+  if (nbJours > 1 && flopArts.length) {
+    out.push('━━━  📉  ARTICLES À SURVEILLER  ━━━');
+    out.push(`⚠️  Le moins vendu : ${flopArts[0][0]} → ${plur(flopArts[0][1],'vendu')} (${f(artCA[flopArts[0][0]]||0)} de CA)`);
+    if (flopArts.length > 1) out.push(`⚠️  2e moins vendu : ${flopArts[1][0]} → ${plur(flopArts[1][1],'vendu')}`);
+    out.push(`👉  Teste-en un en « offre du jour », ou remplace-le par une recette de saison.`);
+  }
+
+  out.push('━━━  🍕  CATÉGORIES  ━━━');
+  topCat.forEach(([cat,ca],i) => out.push(`${i===0?'🥇':i===1?'🥈':i===2?'🥉':'▫️'}  ${cat} → ${f(ca)} (${pct(ca,totalCA)})`));
+
+  // Ventes additionnelles — data-driven (vrais taux, vrais prix), pas de conseil en dur.
+  out.push('━━━  🧲  VENTES ADDITIONNELLES  ━━━');
+  out.push(`🥤  Boisson : ${cats[0].p}%    🍮  Dessert : ${cats[1].p}%    🧀  Supplément : ${cats[2].p}%`);
+  out.push(`👉  Ton plus gros levier : ${faible.nom} (${faible.p}% des ventes). Propose « et avec ça, ${faible.nom} ? » à chaque commande.`);
+  const cible = Math.min(100, faible.p + 10);
+  const gainAttach = nbTx * (cible - faible.p)/100 * faible.prix;
+  if (gainAttach >= 1) out.push(`👉  Passer de ${faible.p}% à ${cible}% ≈ +${f(gainAttach)} ${horizon}.`);
+
+  out.push('━━━  ⏰  HEURES  ━━━');
+  out.push(`🔥  Heure la plus forte : ${g(topHeure,0)}h → ${f(gv(topHeure,0))}`);
+  if (topHeure.length > 1) out.push(`🔥  2e heure : ${g(topHeure,1)}h → ${f(gv(topHeure,1))}`);
+  out.push(`👉  Prépare ta mise en place 30 min avant ${g(topHeure,0)}h.`);
+
+  // Jours de la semaine : uniquement sur plusieurs jours (sinon meilleur == pire == aujourd'hui).
+  if (nbJours > 1) {
+    out.push('━━━  📆  JOURS DE LA SEMAINE  ━━━');
+    out.push(`📈  Meilleur jour : ${g(topJour,0)} → ${f(gv(topJour,0))} (${plur(jourNb[g(topJour,0)]||0,'ticket')})`);
+    out.push(`📉  Jour le plus calme : ${g(topJour,topJour.length-1)} → ${f(gv(topJour,topJour.length-1))}`);
+    out.push(`👉  Un post Facebook la veille de ton ${g(topJour,topJour.length-1)} (le plus calme) pour le remplir.`);
+  }
+
+  out.push('━━━  💳  PAIEMENTS  ━━━');
+  out.push(`💶  Espèces : ${plur(nbEsp,'ticket')} (${pct(nbEsp,nbTx)}) → ${f(caEsp)}`);
+  out.push(`💳  Carte : ${plur(nbCarte,'ticket')} (${pct(nbCarte,nbTx)}) → ${f(caCarte)}`);
+  out.push(`👉  ${nbTx && nbCarte/nbTx > 0.6 ? 'La carte domine — garde ton terminal chargé.' : 'Beaucoup d\'espèces — prévois assez de monnaie en début de service.'}`);
+
+  out.push('━━━  💰  PANIER MOYEN  ━━━');
+  out.push(`📊  Ticket moyen : ${f(ticketMoy)}`);
+  out.push(`👉  Objectif ${f(ticketMoy * 1.1)} (+10%) : ${faible.nom} proposé systématiquement suffit souvent à y arriver.`);
+
+  return out;
 }
 
 // ════════════════════════════════════════════
@@ -366,11 +408,13 @@ function sheetPizzasParJour(ss, stats) {
 
 function sheetCAParCategorie(ss, stats) {
   const s = ensureSheet(ss, '🍕 CA par Catégorie', '📅 CA par Jour');
-  const qty = {}, ca = {};
-  stats.lines.forEach(l => { add(qty, l.cat, l.qty); add(ca, l.cat, l.sub); });
+  const qty = {}, ca = {}, qtyPaid = {};
+  // qtyPaid exclut les offerts : le « prix moyen » = CA / unités PAYÉES, sinon une
+  // pizza offerte (qté 1, CA 0) tire la moyenne vers le bas.
+  stats.lines.forEach(l => { add(qty, l.cat, l.qty); add(ca, l.cat, l.sub); if (!isOffert(l.art)) add(qtyPaid, l.cat, l.qty); });
   const total = Object.values(ca).reduce((a,b)=>a+b,0) || 1;
   const rows = sortDescByVal(ca).map(([cat,c]) =>
-    [cat, qty[cat], eur(c), c/total, eur(c/qty[cat])]);
+    [cat, qty[cat], eur(c), c/total, eur(qtyPaid[cat] ? c/qtyPaid[cat] : 0)]);
   writeTable(s, 'CA PAR CATÉGORIE', '#76894F',
     ['Catégorie','Qté vendue','CA total (€)','% du CA','Prix moyen (€)'],
     rows, [180,100,120,90,120]);
@@ -597,17 +641,20 @@ function sendDailyReport() {
   });
 
   const stats  = computeStats(readValidatedRows(getOrCreateSpreadsheet()));
-  const todayK = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
-  const tk = stats.tickets.filter(t => dayKey(t.date) === todayK);
-  const ln = stats.lines.filter(l => dayKey(l.date) === todayK);
-
-  if (!tk.length) { Logger.log('Aucune vente aujourd\'hui — pas d\'e-mail.'); return; }
+  if (!stats.tickets.length) { Logger.log('Aucune vente — pas d\'e-mail.'); return; }
+  // Jour de SERVICE = jour de la DERNIÈRE vente remontée, pas l'instant d'envoi.
+  // L'iPad peut vider sa file après minuit (hors réseau la soirée) : les ventes
+  // sont alors datées de la veille, et se caler sur « aujourd'hui » les raterait
+  // toutes → e-mail « aucune vente » alors qu'il y a eu un service.
+  const serviceK = stats.tickets.reduce((a, t) => t.date > a.date ? t : a).dKey;
+  const tk = stats.tickets.filter(t => t.dKey === serviceK);
+  const ln = stats.lines.filter(l => l.dKey === serviceK);
 
   buildAndSendReport(tk, ln,
     { titleLabel:'Récap du jour', recoTitle:'Recommandations du jour',
       subjectKind:'Récap jour',
       whenText:'Email envoyé 2 min après la dernière vente remontée depuis l\'iPad.',
-      periode: Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy'),
+      periode: dayLabel(tk[0].date),
       emptyKind:'aucune vente aujourd\'hui' });
 }
 
@@ -700,9 +747,11 @@ function buildAndSendReport(tk, ln, opts) {
   const ventes = tk.slice().sort((a,b)=>b.date-a.date);
   const ventesShown = ventes.slice(0,30);
 
-  // Article star (le plus vendu en quantité) par catégorie
+  // Article star (le plus vendu en quantité) par catégorie — hors offerts, sinon
+  // une catégorie pourrait afficher un « (offert) à 0,00 € » comme star.
   const byCatArt = {}; // cat -> { art -> {qty, ca} }
   ln.forEach(l => {
+    if (isOffert(l.art)) return;
     (byCatArt[l.cat] = byCatArt[l.cat] || {});
     (byCatArt[l.cat][l.art] = byCatArt[l.cat][l.art] || { qty: 0, ca: 0 });
     byCatArt[l.cat][l.art].qty += l.qty;
@@ -2143,6 +2192,18 @@ function tokenOk(e) {
 // ════════════════════════════════════════════
 
 function doPost(e) {
+  // Verrou global : Apps Script exécute doPost en parallèle. Sans verrou, deux
+  // remontées simultanées (deux iPads, ou un ré-essai après timeout pendant que
+  // le 1er écrit encore) lisent la MÊME liste d'IDs existants, ne voient pas le
+  // doublon, et écrivent DEUX FOIS la même vente → CA et stats gonflés. Le verrou
+  // sérialise les écritures ; le ré-essai voit alors l'ID déjà présent et l'ignore.
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'busy' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   try {
     if (!tokenOk(e)) {
       return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'unauthorized' }))
@@ -2153,6 +2214,14 @@ function doPost(e) {
 
     // Synchronisation du catalogue d'articles (partagé entre tous les iPads).
     if (data && !Array.isArray(data) && data.catalogue) {
+      // Garde-fou : un catalogue VIDE n'écrase JAMAIS le catalogue partagé.
+      // saveCatalogue fait clearContents() puis réécrit ce qu'on lui passe : sans
+      // ce filet, un iPad démarré avant d'avoir reçu la carte (articles=[]) effacerait
+      // le menu — et donc les prix — de tous les autres appareils.
+      if (!Array.isArray(data.catalogue) || !data.catalogue.length) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'empty_catalogue' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
       const n = saveCatalogue(ss, data.catalogue, data.updatedAt);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, catalogue: n }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -2198,17 +2267,28 @@ function doPost(e) {
     const sheet = getOrCreateTransactionsSheet(ss);
     const txs   = Array.isArray(data) ? data : [data];
 
-    const lr  = sheet.getLastRow();
-    const ids = lr > 1 ? sheet.getRange(2,1,lr-1,1).getValues().flat() : [];
+    const lr   = sheet.getLastRow();
+    // Set (au lieu d'une liste + includes) pour dédoublonner À LA FOIS contre les
+    // IDs déjà dans le Sheet ET contre les doublons présents dans CE même lot :
+    // on l'alimente au fur et à mesure, sinon [tx1, tx1] passait deux fois.
+    // Comparaison d'IDs TOUJOURS en chaîne : un id tout-numérique relu depuis le
+    // Sheet revient en nombre, alors que l'iPad l'envoie en chaîne → sans String()
+    // le doublon passerait au travers et la vente serait écrite deux fois.
+    const seen = new Set(lr > 1 ? sheet.getRange(2,1,lr-1,1).getValues().flat().map(String) : []);
 
     let added = 0;
     txs.forEach(tx => {
-      if (ids.includes(tx.id)) return;
+      if (!tx || !tx.id || seen.has(String(tx.id))) return;
+      // Vente malformée (pas de lignes) : on l'IGNORE au lieu de laisser
+      // tx.lines.reduce lever une exception — sinon toute la remontée échoue,
+      // l'iPad ré-essaie, et les ventes valides restent bloquées derrière la mauvaise.
+      if (!Array.isArray(tx.lines) || !tx.lines.length) return;
+      seen.add(String(tx.id));
       const d    = new Date(tx.date);                 // Date réelle, stockée telle quelle
       const time = Utilities.formatDate(d, TZ, 'HH:mm');
       const sync = Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm');
       const stat = tx.cancelled ? 'Annulé' : 'Validé';
-      const nb   = tx.lines.reduce((s,l)=>s+l.qty,0);
+      const nb   = tx.lines.reduce((s,l)=>s+(Number(l.qty)||0),0);
       const loc  = tx.location || '';
       const pay  = payLabel(tx);
       tx.lines.forEach(l => {
@@ -2231,6 +2311,8 @@ function doPost(e) {
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({ok:false, error:err.message}))
       .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -2354,47 +2436,51 @@ function getAllTemperatures(ss) {
 
 function doGet(e) {
   const action = e && e.parameter ? e.parameter.action : '';
-  const cb     = e && e.parameter ? e.parameter.callback : '';
-
-  if (!tokenOk(e)) {
-    const err = JSON.stringify({ ok: false, error: 'unauthorized' });
+  // Callback JSONP réfléchi : on ne le réémet que s'il ressemble à un identifiant
+  // JS (lettres/chiffres/_/./$), jamais du texte arbitraire recopié dans la réponse.
+  const cbRaw  = e && e.parameter ? e.parameter.callback : '';
+  const cb     = (cbRaw && /^[\w.$]+$/.test(cbRaw)) ? cbRaw : '';
+  const out = obj => {
+    const json = JSON.stringify(obj);
     return cb
-      ? ContentService.createTextOutput(cb + '(' + err + ')').setMimeType(ContentService.MimeType.JAVASCRIPT)
-      : ContentService.createTextOutput(err).setMimeType(ContentService.MimeType.JSON);
-  }
+      ? ContentService.createTextOutput(cb + '(' + json + ')').setMimeType(ContentService.MimeType.JAVASCRIPT)
+      : ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  };
 
-  let payload;
-  if (action === 'deletelast') {
-    payload = { ok: true, deleted: deleteLastSale() };
-  } else if (action === 'transactions') {
-    payload = { ok: true, transactions: getAllTransactions() };
-  } else if (action === 'rebuild') {
-    rebuildAll();
-    payload = { ok: true, rebuilt: true };
-  } else if (action === 'cancel') {
-    payload = { ok: true, cancelled: cancelTicket(e.parameter.id) };
-  } else if (action === 'catalogue') {
-    const c = getCatalogue(getOrCreateSpreadsheet());
-    payload = { ok: true, articles: c.articles, updatedAt: c.updatedAt };
-  } else if (action === 'temperatures') {
-    payload = { ok: true, enclosures: getAllTemperatures(getOrCreateSpreadsheet()) };
-  } else if (action === 'clients') {
-    payload = { ok: true, clients: getClientsBackup(getOrCreateSpreadsheet()) };
-  } else if (action === 'closures') {
-    payload = { ok: true, closures: getClosuresBackup(getOrCreateSpreadsheet()) };
-  } else if (action === 'annotations') {
-    payload = { ok: true, annotations: getAnnotationsBackup(getOrCreateSpreadsheet()) };
-  } else {
-    payload = { ok: true };
-  }
+  if (!tokenOk(e)) return out({ ok: false, error: 'unauthorized' });
 
-  const json = JSON.stringify(payload);
-  // JSONP si un callback est fourni (permet la lecture depuis le navigateur sans CORS)
-  if (cb) {
-    return ContentService.createTextOutput(cb + '(' + json + ')')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  // Comme doPost : toute exception est renvoyée en { ok:false, error } (même
+  // emballage JSONP) au lieu de propager une page d'erreur HTML — sinon le
+  // <script> JSONP de l'iPad échoue en silence et la lecture semble « pendre ».
+  try {
+    let payload;
+    if (action === 'deletelast') {
+      payload = { ok: true, deleted: deleteLastSale() };
+    } else if (action === 'transactions') {
+      payload = { ok: true, transactions: getAllTransactions() };
+    } else if (action === 'rebuild') {
+      rebuildAll();
+      payload = { ok: true, rebuilt: true };
+    } else if (action === 'cancel') {
+      payload = { ok: true, cancelled: cancelTicket(e.parameter.id) };
+    } else if (action === 'catalogue') {
+      const c = getCatalogue(getOrCreateSpreadsheet());
+      payload = { ok: true, articles: c.articles, updatedAt: c.updatedAt };
+    } else if (action === 'temperatures') {
+      payload = { ok: true, enclosures: getAllTemperatures(getOrCreateSpreadsheet()) };
+    } else if (action === 'clients') {
+      payload = { ok: true, clients: getClientsBackup(getOrCreateSpreadsheet()) };
+    } else if (action === 'closures') {
+      payload = { ok: true, closures: getClosuresBackup(getOrCreateSpreadsheet()) };
+    } else if (action === 'annotations') {
+      payload = { ok: true, annotations: getAnnotationsBackup(getOrCreateSpreadsheet()) };
+    } else {
+      payload = { ok: true };
+    }
+    return out(payload);
+  } catch (err) {
+    return out({ ok: false, error: String((err && err.message) || err) });
   }
-  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Colonne « Paiement » : pour un paiement mixte, le détail espèces/carte est
@@ -2403,23 +2489,39 @@ function doGet(e) {
 // besoin pour calculer les « espèces attendues ». Pas de colonne supplémentaire :
 // changer HEADERS archiverait la feuille Transactions et repartirait de zéro.
 function payLabel(tx) {
+  let base;
   if (tx.method === 'mixte' && tx.split) {
     const f = n => (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.', ',');
-    return 'mixte (espèces ' + f(tx.split.especes) + ' € + carte ' + f(tx.split.carte) + ' €)';
+    base = 'mixte (espèces ' + f(tx.split.especes) + ' € + carte ' + f(tx.split.carte) + ' €)';
+  } else {
+    base = tx.method;
   }
-  return tx.method;
+  // Remboursement : on grave le lien vers la vente d'origine DANS le libellé, à la
+  // manière du détail mixte ci-dessus (pas de colonne en plus). Sans ça, refundOf
+  // est perdu au rechargement des ventes : la garde anti-double-remboursement ne
+  // voit plus les remboursements déjà faits (autre iPad, ou le lendemain une fois la
+  // vente locale purgée) et les mêmes articles peuvent être remboursés une 2e fois.
+  if (tx.refundOf) base += ' ↩#' + tx.refundOf;
+  return base;
 }
 
-// Opération inverse : relit méthode + répartition depuis la colonne Paiement.
-// Les anciennes lignes « mixte » sans détail redonnent { method: 'mixte' } seul.
+// Opération inverse : relit méthode + répartition + lien de remboursement depuis
+// la colonne Paiement. Les anciennes lignes « mixte » sans détail redonnent
+// { method: 'mixte' } seul ; un remboursement historique sans marqueur redonne
+// refundOf undefined (garde inopérante sur l'historique, mais correcte désormais).
 function parsePay(raw) {
-  const s = String(raw || '');
-  if (!/^mixte/i.test(s)) return { method: s };
+  let s = String(raw || '');
+  // Marqueur de remboursement éventuel « … ↩#<id d'origine> » : on l'extrait puis
+  // on le retire avant d'interpréter la méthode (l'id uid() n'a jamais d'espace).
+  const mRef = s.match(/↩#(\S+)\s*$/);
+  const refundOf = mRef ? mRef[1] : undefined;
+  if (mRef) s = s.slice(0, mRef.index).trim();
+  if (!/^mixte/i.test(s)) return { method: s, refundOf: refundOf };
   const mE = s.match(/esp[eè]ces?\s*([\d]+(?:[.,]\d+)?)/i);
   const mC = s.match(/carte\s*([\d]+(?:[.,]\d+)?)/i);
-  if (!mE || !mC) return { method: 'mixte' };
+  if (!mE || !mC) return { method: 'mixte', refundOf: refundOf };
   const num = m => Number(m[1].replace(',', '.'));
-  return { method: 'mixte', split: { especes: num(mE), carte: num(mC) } };
+  return { method: 'mixte', split: { especes: num(mE), carte: num(mC) }, refundOf: refundOf };
 }
 
 // Reconstruit toutes les transactions (1 objet/ticket) à partir des lignes de la feuille.
@@ -2438,11 +2540,12 @@ function getAllTransactions() {
       const d = r[COL.date] instanceof Date ? r[COL.date] : new Date(r[COL.date]);
       const pp = parsePay(r[COL.pay]);
       map[id] = {
-        id: id,
+        id: String(id),   // toujours renvoyer l'id en chaîne (un id tout-numérique revient en nombre du Sheet)
         date: d.toISOString(),
         location: r[COL.loc] || '',
         method: pp.method,
         split: pp.split,
+        refundOf: pp.refundOf,   // lien remboursement → vente d'origine (garde anti-double-remboursement)
         total: Number(r[COL.total]) || 0,
         cancelled: r[COL.statut] === 'Annulé',
         lines: []
@@ -2499,47 +2602,61 @@ function createOpenTrigger() {
 // Passe un ticket au statut « Annulé » (toutes ses lignes) puis recalcule les onglets.
 function cancelTicket(id) {
   if (!id) return 0;
-  const ss    = getOrCreateSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) return 0;
-  const lr = sheet.getLastRow();
-  if (lr < 2) return 0;
-  const ids = sheet.getRange(2, 1, lr - 1, 1).getValues().flat();
-  let count = 0;
-  ids.forEach((rid, i) => {
-    if (rid === id) { sheet.getRange(i + 2, COL.statut + 1).setValue('Annulé'); count++; }
-  });
-  if (count > 0) createAllSheets(ss);
-  Logger.log('Ticket ' + id + ' : ' + count + ' ligne(s) passée(s) en Annulé.');
-  return count;
+  // Même verrou que doPost : sans lui, une annulation pendant qu'un iPad écrit
+  // pourrait viser un mauvais rang. On sérialise toutes les écritures du Sheet.
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { return 0; }
+  try {
+    const ss    = getOrCreateSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) return 0;
+    const lr = sheet.getLastRow();
+    if (lr < 2) return 0;
+    const ids = sheet.getRange(2, 1, lr - 1, 1).getValues().flat();
+    let count = 0;
+    ids.forEach((rid, i) => {
+      // Comparaison en chaîne : l'id arrive de l'URL (toujours texte) et peut avoir
+      // été stocké en nombre par Sheets s'il est tout-numérique.
+      if (String(rid) === String(id)) { sheet.getRange(i + 2, COL.statut + 1).setValue('Annulé'); count++; }
+    });
+    if (count > 0) createAllSheets(ss);
+    Logger.log('Ticket ' + id + ' : ' + count + ' ligne(s) passée(s) en Annulé.');
+    return count;
+  } finally { lock.releaseLock(); }
 }
 
 // Supprime la DERNIÈRE vente (dernier ticket) de la feuille Transactions,
 // puis renumérote et recalcule tous les onglets.
 function deleteLastSale() {
-  const ss    = getOrCreateSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    Logger.log('⚠️ Onglet "Transactions" introuvable dans ce classeur.');
-    Logger.log('Classeur ouvert : ' + ss.getUrl());
-    Logger.log('Onglets présents : ' + ss.getSheets().map(s => s.getName()).join(', '));
-    Logger.log('→ Tu édites probablement le mauvais projet de script (celui-ci a créé un classeur vide). Édite le projet lié à ton déploiement /exec.');
-    return null;
-  }
-  const lr = sheet.getLastRow();
-  if (lr < 2) { Logger.log('Aucune vente à supprimer.'); return null; }
+  // Verrou : getLastRow() puis deleteRows() ne doivent pas être coupés par un
+  // doPost qui ajoute des lignes entre les deux, sinon on supprime le mauvais ticket.
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { return null; }
+  try {
+    const ss    = getOrCreateSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      Logger.log('⚠️ Onglet "Transactions" introuvable dans ce classeur.');
+      Logger.log('Classeur ouvert : ' + ss.getUrl());
+      Logger.log('Onglets présents : ' + ss.getSheets().map(s => s.getName()).join(', '));
+      Logger.log('→ Tu édites probablement le mauvais projet de script (celui-ci a créé un classeur vide). Édite le projet lié à ton déploiement /exec.');
+      return null;
+    }
+    const lr = sheet.getLastRow();
+    if (lr < 2) { Logger.log('Aucune vente à supprimer.'); return null; }
 
-  const ids    = sheet.getRange(2, 1, lr - 1, 1).getValues().flat();
-  const lastId = ids[ids.length - 1];
+    const ids    = sheet.getRange(2, 1, lr - 1, 1).getValues().flat().map(String);
+    const lastId = ids[ids.length - 1];
 
-  // Le dernier ticket = lignes contiguës du bas partageant le même ID
-  let count = 0;
-  for (let i = ids.length - 1; i >= 0 && ids[i] === lastId; i--) count++;
+    // Le dernier ticket = lignes contiguës du bas partageant le même ID
+    let count = 0;
+    for (let i = ids.length - 1; i >= 0 && ids[i] === lastId; i--) count++;
 
-  sheet.deleteRows(lr - count + 1, count);
-  numberTickets(sheet);
-  createAllSheets(ss);
+    sheet.deleteRows(lr - count + 1, count);
+    numberTickets(sheet);
+    createAllSheets(ss);
 
-  Logger.log(`Supprimé ${count} ligne(s) du ticket ${lastId}. Tous les onglets ont été mis à jour.`);
-  return { id: lastId, rows: count };
+    Logger.log(`Supprimé ${count} ligne(s) du ticket ${lastId}. Tous les onglets ont été mis à jour.`);
+    return { id: lastId, rows: count };
+  } finally { lock.releaseLock(); }
 }
