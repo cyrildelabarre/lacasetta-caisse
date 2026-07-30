@@ -310,8 +310,18 @@ header {
 }
 .temp-enc-tab.active { background: var(--terracotta); color: #fff; border-color: var(--terracotta); }
 .temp-enc-item { position: relative; display: inline-flex; }
+/* En mode Modifier, l'enceinte devient une colonne : onglet en haut, flèches de
+   déplacement (◀ ▶) en dessous — l'ordre des onglets est l'ordre choisi. */
+.temp-enc-item.editing { flex-direction: column; align-items: stretch; gap: .25rem; }
 .temp-enc-item.editing .temp-enc-tab { animation: temp-wiggle .4s ease-in-out infinite alternate; }
 @keyframes temp-wiggle { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
+.temp-enc-move { display: flex; gap: .25rem; }
+.temp-enc-mv {
+  flex: 1; border: 1px solid var(--border); background: var(--white); color: var(--dark);
+  border-radius: 8px; padding: .3rem 0; font-size: .8rem; font-weight: 700; cursor: pointer; line-height: 1;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.temp-enc-mv:disabled { opacity: .3; cursor: default; }
 .temp-enc-del {
   position: absolute; top: -8px; right: -8px; z-index: 2;
   width: 22px; height: 22px; border-radius: 50%;

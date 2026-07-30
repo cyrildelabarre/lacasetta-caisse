@@ -1136,17 +1136,36 @@ function openTempModal(enc) {
 }
 function renderTempTabs() {
   const wrap = document.getElementById('temp-enc-tabs');
-  wrap.innerHTML = getEnclosures().map(e =>
+  const list = getEnclosures();
+  wrap.innerHTML = list.map((e, i) =>
     `<span class="temp-enc-item${tempEditMode ? ' editing' : ''}">` +
       `<button class="temp-enc-tab${e.id === tempEnc ? ' active' : ''}" data-enc="${e.id}">${encIcon(e.type)} ${escapeHtml(e.name)}</button>` +
-      (tempEditMode ? `<button class="temp-enc-del" data-enc="${e.id}" title="Supprimer cette enceinte">×</button>` : '') +
+      (tempEditMode
+        ? `<button class="temp-enc-del" data-enc="${e.id}" title="Supprimer cette enceinte">×</button>` +
+          `<span class="temp-enc-move">` +
+            `<button class="temp-enc-mv" data-enc="${e.id}" data-dir="-1" ${i === 0 ? 'disabled' : ''} title="Déplacer à gauche">◀</button>` +
+            `<button class="temp-enc-mv" data-enc="${e.id}" data-dir="1" ${i === list.length - 1 ? 'disabled' : ''} title="Déplacer à droite">▶</button>` +
+          `</span>`
+        : '') +
     '</span>'
   ).join('') + '<button class="temp-enc-add" id="temp-enc-add" title="Ajouter une enceinte">＋</button>';
   wrap.querySelectorAll('.temp-enc-tab').forEach(b => b.addEventListener('click', () => { tempEnc = b.dataset.enc; loadTempInto(); }));
   wrap.querySelectorAll('.temp-enc-del').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); deleteEnclosure(b.dataset.enc); }));
+  wrap.querySelectorAll('.temp-enc-mv').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); moveEnclosure(b.dataset.enc, +b.dataset.dir); }));
   document.getElementById('temp-enc-add').addEventListener('click', openAddEnclosure);
   const editBtn = document.getElementById('btn-temp-edit');
   if (editBtn) editBtn.textContent = tempEditMode ? '✓ Terminer' : '✏️ Modifier';
+}
+// Réordonne les enceintes (mode Modifier) : l'ordre des onglets = l'ordre choisi.
+// Les relevés sont clés par enc.id, donc déplacer une enceinte ne perd aucun relevé.
+function moveEnclosure(id, dir) {
+  const list = getEnclosures().slice();
+  const i = list.findIndex(e => e.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  saveEnclosures(list);
+  renderTempTabs();
 }
 function loadTempInto() {
   tempRec = getTempRecord(tempEnc, tempMonth);
