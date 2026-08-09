@@ -140,13 +140,27 @@ function computeStats(rows) {
     });
     const id = r[COL.id];
     if (!tickets[id]) {
+      const pp    = parsePay(r[COL.pay]);   // méthode + détail mixte + lien de remboursement
+      const total = Number(r[COL.total]) || 0;
+      // Répartition espèces / carte du ticket. Gère le paiement MIXTE (le POS grave
+      // « mixte (espèces X € + carte Y €) » dans la colonne Paiement) et n'affecte
+      // JAMAIS silencieusement une méthode inconnue à la carte → bucket « autre ».
+      let esp = 0, carte = 0, autre = 0;
+      if      (pp.method === 'especes')            esp   = total;
+      else if (pp.method === 'carte')              carte = total;
+      else if (pp.method === 'mixte' && pp.split) { esp = Number(pp.split.especes) || 0; carte = Number(pp.split.carte) || 0; }
+      else                                         autre = total;
       tickets[id] = {
         id:    id,
-        total: Number(r[COL.total])||0,
-        // On retire le marqueur de remboursement « ↩#… » : les stats des récaps
-        // comparent pay==='especes' — un remboursement doit rester classé sur sa
-        // méthode de base ('especes'/'carte'), comme avant l'ajout du marqueur.
-        pay:   String(r[COL.pay] || '').replace(/\s*↩#\S+\s*$/, ''),
+        total: total,
+        // Méthode nue ('especes'|'carte'|'mixte'|autre) : parsePay a déjà retiré le
+        // marqueur de remboursement « ↩#… » et le détail mixte du libellé.
+        pay:    pp.method || '',
+        esp:    esp, carte: carte, autre: autre,
+        // Ticket de REMBOURSEMENT (lié par « ↩#<id> », montants/quantités négatifs) :
+        // il vient en déduction du CA (montants NETS) mais NE compte pas comme une
+        // vente supplémentaire (voir nbTk dans les récaps).
+        refund: !!pp.refundOf,
         loc:   r[COL.loc] || '(non défini)',
         date:  asDate(r[COL.date]),
         dKey:  dayKey(r[COL.date]),
@@ -221,11 +235,12 @@ function insightLines(tk, ln) {
   const artCA={}, artQty={}, catCA={}, heureCA={}, jourCA={}, jourNb={};
   let nbEsp=0, nbCarte=0, caEsp=0, caCarte=0;
   ln.forEach(l => { add(artCA,l.art,l.sub); add(artQty,l.art,l.qty); add(catCA,l.cat,l.sub); add(heureCA,l.hour,l.sub); });
-  tk.forEach(t => { const j=JOURS[t.date.getDay()]; add(jourCA,j,t.total); add(jourNb,j,1);
-    if (t.pay==='especes'){nbEsp++;caEsp+=t.total;} else {nbCarte++;caCarte+=t.total;} });
+  tk.forEach(t => { const j=JOURS[t.date.getDay()]; add(jourCA,j,t.total); if (!t.refund) add(jourNb,j,1);
+    caEsp += t.esp; caCarte += t.carte;   // montants nets : mixte réparti, remboursements déduits
+    if (!t.refund) { if (t.esp >= t.carte) nbEsp++; else nbCarte++; } });   // 1 ticket = sa méthode dominante
 
   const totalCA   = Object.values(artCA).reduce((a,b)=>a+b,0);
-  const nbTx      = tk.length;
+  const nbTx      = tk.filter(t => !t.refund).length;   // ventes réelles (hors remboursements)
   const ticketMoy = nbTx ? totalCA/nbTx : 0;
   // Nombre de jours DISTINCTS couverts : 1 = récap d'une soirée (envoyé le soir même),
   // plusieurs = onglet Recommandations sur tout l'historique. Les analyses « jours de
@@ -340,7 +355,10 @@ function sheetCAParJour(ss, stats) {
     const gObj = get(t.dKey);
     gObj.label = dayLabel(t.date);
     gObj.tickets++; gObj.ca += t.total;
-    if (t.pay === 'especes') gObj.esp += t.total; else gObj.carte += t.total;
+    // Répartition espèces/carte : le paiement mixte est ventilé, et la colonne
+    // Carte absorbe la part carte + une éventuelle méthode « autre » (2 colonnes
+    // seulement) → esp + carte = CA total exactement.
+    gObj.esp += t.esp; gObj.carte += (t.total - t.esp);
   });
   stats.lines.forEach(l => { get(l.dKey).nbArt += l.qty; });
 
@@ -499,8 +517,8 @@ function sheetTableauDeBord(ss, stats) {
   const nbTk  = tk30.length;
   const ticketMoy = nbTk ? caTot/nbTk : 0;
 
-  const caEsp   = tk30.filter(t=>t.pay==='especes').reduce((a,t)=>a+t.total,0);
-  const caCarte = caTot - caEsp;
+  const caEsp   = tk30.reduce((a,t)=>a+t.esp,0);   // part espèces (paiement mixte inclus)
+  const caCarte = caTot - caEsp;                    // carte + éventuelle méthode « autre »
 
   // Articles 30j (depuis les lignes, qui portent désormais leur date)
   let nbArt30 = 0;
@@ -640,22 +658,40 @@ function sendDailyReport() {
     if (t.getHandlerFunction() === 'sendDailyReport') ScriptApp.deleteTrigger(t);
   });
 
-  const stats  = computeStats(readValidatedRows(getOrCreateSpreadsheet()));
+  const stats = computeStats(readValidatedRows(getOrCreateSpreadsheet()));
   if (!stats.tickets.length) { Logger.log('Aucune vente — pas d\'e-mail.'); return; }
-  // Jour de SERVICE = jour de la DERNIÈRE vente remontée, pas l'instant d'envoi.
-  // L'iPad peut vider sa file après minuit (hors réseau la soirée) : les ventes
-  // sont alors datées de la veille, et se caler sur « aujourd'hui » les raterait
-  // toutes → e-mail « aucune vente » alors qu'il y a eu un service.
-  const serviceK = stats.tickets.reduce((a, t) => t.date > a.date ? t : a).dKey;
-  const tk = stats.tickets.filter(t => t.dKey === serviceK);
-  const ln = stats.lines.filter(l => l.dKey === serviceK);
 
-  buildAndSendReport(tk, ln,
-    { titleLabel:'Récap du jour', recoTitle:'Recommandations du jour',
-      subjectKind:'Récap jour',
-      whenText:'Email envoyé 2 min après la dernière vente remontée depuis l\'iPad.',
-      periode: dayLabel(tk[0].date),
-      emptyKind:'aucune vente aujourd\'hui' });
+  // Jours de SERVICE présents (jour de la vente, pas l'instant d'envoi) : l'iPad
+  // peut vider sa file après minuit (hors réseau la soirée), les ventes sont alors
+  // datées de la veille — se caler sur « aujourd'hui » les raterait toutes.
+  const days = [...new Set(stats.tickets.map(t => t.dKey))].sort();
+
+  // Rattrapage MULTI-JOURS : si l'iPad est resté hors réseau plusieurs soirs puis
+  // vide toute sa file d'un coup, on envoie UN récap par jour non encore rapporté
+  // (avant, seul le dernier jour partait, les précédents n'avaient jamais leur
+  // e-mail du jour). L'état « dernier jour rapporté » est gardé dans les propriétés
+  // du script : un même jour n'est donc jamais envoyé deux fois, même si l'iPad
+  // réarme l'envoi après une vente tardive.
+  const props        = PropertiesService.getScriptProperties();
+  const lastReported = props.getProperty('lastDailyReportDay') || '';
+  const cutoff       = dayKey(new Date(Date.now() - 7 * 86400000));  // filet : jamais plus de 7 jours en arrière
+  let toReport = days.filter(d => d > lastReported && d >= cutoff);
+  // Tout premier lancement (aucun état) : ne rapporter que le dernier jour, pour ne
+  // pas déclencher une avalanche d'e-mails sur l'historique déjà présent en feuille.
+  if (!lastReported) toReport = toReport.slice(-1);
+  if (!toReport.length) { Logger.log('Récap du jour déjà envoyé jusqu\'à ' + (lastReported || '—') + '.'); return; }
+
+  toReport.forEach(serviceK => {
+    const tk = stats.tickets.filter(t => t.dKey === serviceK);
+    const ln = stats.lines.filter(l => l.dKey === serviceK);
+    buildAndSendReport(tk, ln,
+      { titleLabel:'Récap du jour', recoTitle:'Recommandations du jour',
+        subjectKind:'Récap jour',
+        whenText:'Email envoyé 2 min après la dernière vente remontée depuis l\'iPad.',
+        periode: dayLabel(tk[0].date),
+        emptyKind:'aucune vente aujourd\'hui' });
+  });
+  props.setProperty('lastDailyReportDay', toReport[toReport.length - 1]);
 }
 
 // (Ré)arme l'envoi du récap 2 min plus tard. Appelé UNIQUEMENT sur demande de
@@ -680,18 +716,22 @@ function buildAndSendReport(tk, ln, opts) {
     return;
   }
 
-  const caTot = tk.reduce((a,t)=>a+t.total,0);
-  const nbTk  = tk.length;
-  const nbArt = ln.reduce((a,l)=>a+l.qty,0);
-  const ticketMoy = caTot/nbTk;
-  const caEsp = tk.filter(t=>t.pay==='especes').reduce((a,t)=>a+t.total,0);
-  const caCarte = caTot - caEsp;
+  // Montants NETS (remboursements déduits) ; comptes de ventes HORS remboursements.
+  const sales   = tk.filter(t => !t.refund);         // vraies ventes (pour les COMPTES)
+  const nRefund = tk.length - sales.length;
+  const caTot = tk.reduce((a,t)=>a+t.total,0);       // net des remboursements
+  const nbTk  = sales.length;                        // « Ventes » = ventes réelles
+  const nbArt = ln.reduce((a,l)=>a+l.qty,0);         // net (une ligne remboursée a une qté négative)
+  const ticketMoy = nbTk ? caTot/nbTk : 0;
+  const caEsp   = tk.reduce((a,t)=>a+t.esp,0);       // part espèces (mixte inclus)
+  const caCarte = tk.reduce((a,t)=>a+t.carte,0);     // part carte (mixte inclus)
+  const caAutre = tk.reduce((a,t)=>a+t.autre,0);     // méthodes inconnues — jamais fondues dans la carte
 
   // Agrégations
   const artCA={}, artQty={}, byDay={}, byLoc={};
   ln.forEach(l => { add(artCA,l.art,l.sub); add(artQty,l.art,l.qty); });
   tk.forEach(t => {
-    const d=byDay[t.dKey]||(byDay[t.dKey]={label:dayLabel(t.date),ca:0,n:0}); d.ca+=t.total; d.n++;
+    const d=byDay[t.dKey]||(byDay[t.dKey]={label:dayLabel(t.date),ca:0,n:0}); d.ca+=t.total; if (!t.refund) d.n++;
     add(byLoc, t.loc, t.total);
   });
   const topAll  = sortDescByVal(artCA);
@@ -719,7 +759,7 @@ function buildAndSendReport(tk, ln, opts) {
 
   // CA / ventes par heure (pic surligné)
   const byHour = {};
-  tk.forEach(t => { const h=byHour[t.hour]||(byHour[t.hour]={n:0,ca:0}); h.n++; h.ca+=t.total; });
+  tk.forEach(t => { const h=byHour[t.hour]||(byHour[t.hour]={n:0,ca:0}); if (!t.refund) h.n++; h.ca+=t.total; });
   const hourKeys = Object.keys(byHour).sort();
   const peakHourCA = Math.max.apply(null, hourKeys.map(h=>byHour[h].ca));
 
@@ -729,14 +769,18 @@ function buildAndSendReport(tk, ln, opts) {
   const catRows = sortDescByVal(catCA2);
 
   // Panier moyen : par tranche horaire et par taille de commande
+  // Tranches couvrant la journée ENTIÈRE (0–24) : aucune vente n'est perdue, ni à
+  // 23h (l'ancienne borne s'arrêtait à 23h), ni après minuit. Les tranches vides
+  // sont masquées à l'affichage — « Nuit » n'apparaît que s'il y a vraiment vendu.
   const tranches = [
+    { label:'Nuit (après minuit)', lo:0,  hi:8,  sum:0, n:0 },
     { label:'Matin (8h–12h)',      lo:8,  hi:12, sum:0, n:0 },
     { label:'Midi (12h–14h)',      lo:12, hi:14, sum:0, n:0 },
     { label:'Après-midi (14h–18h)',lo:14, hi:18, sum:0, n:0 },
-    { label:'Soir (18h–23h)',      lo:18, hi:23, sum:0, n:0 },
+    { label:'Soir (18h–minuit)',   lo:18, hi:24, sum:0, n:0 },
   ];
   const tailles = { '1 article':{sum:0,n:0}, '2–3 articles':{sum:0,n:0}, '4+ articles':{sum:0,n:0} };
-  tk.forEach(t => {
+  sales.forEach(t => {   // paniers = vraies ventes : un remboursement fausserait la moyenne
     const h = Number(t.hour);
     tranches.forEach(tr => { if (h >= tr.lo && h < tr.hi) { tr.sum += t.total; tr.n++; } });
     const key = t.nbArt === 1 ? '1 article' : t.nbArt <= 3 ? '2–3 articles' : '4+ articles';
@@ -762,13 +806,19 @@ function buildAndSendReport(tk, ln, opts) {
     return { cat: cat, art: best[0], qty: best[1].qty, ca: best[1].ca };
   }).sort((a,b)=>b.qty-a.qty);
 
-  // Taux d'attachement : part des ventes contenant boisson / dessert / supplément
+  // Taux d'attachement : part des VENTES contenant boisson / dessert / supplément.
+  // Hors OFFERTS (comme les recommandations) : une boisson offerte n'est pas un
+  // attachement réussi — sinon la même vente s'affiche à deux taux différents dans
+  // le même e-mail. Hors remboursements ; dénominateur = nbTk (ventes réelles).
+  const catsBySale = {};
+  ln.forEach(l => { if (!isOffert(l.art)) (catsBySale[l.tid] = catsBySale[l.tid] || {})[l.cat] = true; });
+  const saleIds = new Set(sales.map(t => t.id));
   const attach = [
     { label:'🥤 Boissons',    re:/boisson/i },
     { label:'🍮 Desserts',    re:/dessert/i },
     { label:'🧀 Suppléments', re:/supp/i },
   ].map(d => {
-    const n = tk.filter(t => Object.keys(t.cats||{}).some(c => d.re.test(c))).length;
+    const n = Object.keys(catsBySale).filter(tid => saleIds.has(tid) && Object.keys(catsBySale[tid]).some(c => d.re.test(c))).length;
     const p = nbTk ? Math.round(n/nbTk*100) : 0;
     const oneIn = n ? Math.round(nbTk/n*10)/10 : null;
     return { label:d.label, n:n, pct:p, oneIn:oneIn };
@@ -803,7 +853,9 @@ function buildAndSendReport(tk, ln, opts) {
   S.paiements = sec('💳 Paiements', tbl(
     `<tr>${th('Mode')}${th('Montant')}${th('Part')}</tr>
      <tr>${td('💶 Espèces')}${td(fmt(caEsp))}${td(pct(caEsp,caTot))}</tr>
-     <tr>${td('💳 Carte')}${td(fmt(caCarte))}${td(pct(caCarte,caTot))}</tr>`));
+     <tr>${td('💳 Carte')}${td(fmt(caCarte))}${td(pct(caCarte,caTot))}</tr>` +
+     (caAutre ? `<tr>${td('❔ Autre')}${td(fmt(caAutre))}${td(pct(caAutre,caTot))}</tr>` : '')) +
+    (nRefund ? `<p style="font-size:12px;color:#999;margin:6px 2px 0">Montants nets — ${nRefund} remboursement${nRefund>1?'s':''} déjà déduit${nRefund>1?'s':''} du CA.</p>` : ''));
 
   S.caParJour = sec('📅 CA par jour', tbl(
     `<tr>${th('Jour')}${th('Ventes')}${th('CA')}</tr>` +
@@ -856,10 +908,10 @@ function buildAndSendReport(tk, ln, opts) {
     '<div style="height:8px"></div>' + tbl(
     `<tr>${th('Taille commande')}${th('Panier moy.')}${th('Ventes')}</tr>` + taRows));
 
-  S.ventesDetail = sec(`🧾 Ventes (${nbTk})`, tbl(
+  S.ventesDetail = sec(`🧾 Ventes (${nbTk}${nRefund ? ` + ${nRefund} remb.` : ''})`, tbl(
     `<tr>${th('Heure')}${th('Articles')}${th('Paiement')}${th('Emplacement')}${th('Total')}</tr>` +
-    ventesShown.map(t=>`<tr>${td(dayLabel(t.date)+' '+t.time)}${td(t.nbArt)}${td(t.pay)}${td(t.loc)}${td(fmt(t.total),true)}</tr>`).join('')) +
-    (ventes.length > 30 ? `<p style="font-size:12px;color:#999">… et ${ventes.length-30} autres ventes (voir le Google Sheet).</p>` : ''));
+    ventesShown.map(t=>`<tr${t.refund?' style="color:#9b2c1e"':''}>${td((t.refund?'↩ ':'')+dayLabel(t.date)+' '+t.time)}${td(t.nbArt)}${td(t.pay)}${td(t.loc)}${td(fmt(t.total),true)}</tr>`).join('')) +
+    (ventes.length > 30 ? `<p style="font-size:12px;color:#999">… et ${ventes.length-30} autres lignes (voir le Google Sheet).</p>` : ''));
 
   S.recommandations = `<h3 style="color:${C.brand};margin:26px 0 4px;font-size:16px">💡 ${opts.recoTitle}</h3>
       <div style="background:#fff;border:1px solid ${C.line};border-radius:8px;padding:12px 16px">${recoHtml}</div>`;
@@ -899,6 +951,49 @@ function buildAndSendReport(tk, ln, opts) {
 function listAllTriggers() {
   const lignes = ScriptApp.getProjectTriggers().map(t => '• ' + t.getHandlerFunction() + '  (' + t.getEventType() + ')');
   Logger.log(lignes.length ? lignes.join('\n') : 'Aucun déclencheur installé.');
+}
+
+// ════════════════════════════════════════════
+//  EMAIL HEBDOMADAIRE — le samedi à 9h, sur la semaine écoulée
+// ════════════════════════════════════════════
+// Fenêtre = les 7 DERNIERS JOURS ACHEVÉS (hier inclus, aujourd'hui exclu). On
+// filtre par DATE de service, pas par instant de sync : une vente du vendredi
+// soir remontée samedi matin compte quand même, tant qu'elle est arrivée avant
+// l'envoi. Le déclencheur est volontairement à 9h (et non 8h) pour laisser à la
+// dernière soirée — souvent hors réseau — un peu de temps pour remonter sur le
+// Sheet ; même logique que le mensuel envoyé le soir du 1er. Comme la fenêtre
+// ne compte que des jours ACHEVÉS, l'heure exacte d'envoi ne change pas quels
+// jours sont inclus (contrairement à une fenêtre glissante en heures).
+// Mêmes sections que le récap du jour, agrégées sur la semaine.
+// Installation (UNE FOIS) : exécuter setupWeeklyTrigger() dans l'éditeur.
+
+// Récap hebdo (les 7 jours calendaires achevés précédant aujourd'hui).
+function sendWeeklyReport() {
+  const stats = computeStats(readValidatedRows(getOrCreateSpreadsheet()));
+  if (!stats.tickets.length) { Logger.log('Aucune vente — pas de récap hebdo.'); return; }
+  const now    = new Date();
+  const todayK = dayKey(now);
+  const startK = dayKey(new Date(now - 7 * 86400000));   // il y a 7 jours (même jour, semaine passée)
+  const inWeek = k => k >= startK && k < todayK;          // hier inclus, aujourd'hui exclu
+  const tk = stats.tickets.filter(t => inWeek(t.dKey));
+  const ln = stats.lines.filter(l => inWeek(l.dKey));
+  if (!tk.length) { Logger.log('Aucune vente sur les 7 derniers jours — pas de récap hebdo.'); return; }
+  buildAndSendReport(tk, ln,
+    { titleLabel:'Récap de la semaine', recoTitle:'Recommandations de la semaine',
+      subjectKind:'Récap semaine',
+      whenText:'Email automatique envoyé chaque samedi, sur les 7 derniers jours achevés.',
+      periode:`${Utilities.formatDate(new Date(now - 7 * 86400000), TZ, 'dd/MM')} – ${Utilities.formatDate(new Date(now - 86400000), TZ, 'dd/MM/yyyy')}`,
+      emptyKind:'aucune vente cette semaine' });
+}
+
+// À EXÉCUTER UNE FOIS depuis l'éditeur : programme l'envoi chaque samedi vers 9h.
+function setupWeeklyTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'sendWeeklyReport') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendWeeklyReport')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.SATURDAY).atHour(9).nearMinute(0).create();
+  Logger.log('Récap hebdo installé : chaque samedi vers 9h, sur les 7 derniers jours achevés.');
 }
 
 // ════════════════════════════════════════════
@@ -1034,10 +1129,16 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   if (!tk.length) { Logger.log('Aucune vente en ' + monthLabelFr(mKey) + ' — pas de récap mensuel.'); return; }
 
+  // Remboursements (tickets liés « ↩#… », montants/quantités négatifs) : ils
+  // diminuent le CA (montants NETS partout) mais ne comptent pas comme des ventes.
+  // `tk`/`ln` restent nets pour l'argent ; `sales`/`salesP` servent aux COMPTES.
+  const sales  = tk.filter(t => !t.refund);
+  const salesP = tkP.filter(t => !t.refund);
+
   const fmt = eurStr;
   const plur = (n, mot) => n + ' ' + mot + (n > 1 ? 's' : '');   // « 1 vente » / « 2 ventes »
   const caTot  = tk.reduce((a, t) => a + t.total, 0),  caTotP  = tkP.reduce((a, t) => a + t.total, 0);
-  const nbTk   = tk.length,                            nbTkP   = tkP.length;
+  const nbTk   = sales.length,                         nbTkP   = salesP.length;   // ventes réelles (hors remboursements)
   const nbArt  = ln.reduce((a, l) => a + l.qty, 0),    nbArtP  = lnP.reduce((a, l) => a + l.qty, 0);
   const panier = caTot / nbTk,                         panierP = nbTkP ? caTotP / nbTkP : 0;
 
@@ -1052,7 +1153,7 @@ function deliverMonthlyReport(mKey, upToDay) {
 
   // ── Agrégations ─────────────────────────────────────────────────────────────
   const byDay = {};
-  tk.forEach(t => { const o = byDay[t.dKey] || (byDay[t.dKey] = { ca: 0, n: 0, date: t.date }); o.ca += t.total; o.n++; });
+  tk.forEach(t => { const o = byDay[t.dKey] || (byDay[t.dKey] = { ca: 0, n: 0, date: t.date }); o.ca += t.total; if (!t.refund) o.n++; });
   const dayKeys    = Object.keys(byDay).sort();
   const joursActifs  = dayKeys.length;
   const joursActifsP = Object.keys(tkP.reduce((m, t) => (m[t.dKey] = 1, m), {})).length;
@@ -1083,7 +1184,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   tk.forEach(t => {
     const w = Math.min(4, Math.floor((+t.dKey.slice(8, 10) - 1) / 7));
     const o = weeks[w] || (weeks[w] = { ca: 0, n: 0 });
-    o.ca += t.total; o.n++;
+    o.ca += t.total; if (!t.refund) o.n++;
   });
   const maxWeekCA = Math.max.apply(null, Object.values(weeks).map(w => w.ca));
   const dernierJour = upToDay || daysInMonthOf(mKey);
@@ -1094,7 +1195,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   tk.forEach(t => {
     const g = t.date.getDay();
     const o = wd[g] || (wd[g] = { ca: 0, n: 0, days: {} });
-    o.ca += t.total; o.n++; o.days[t.dKey] = 1;
+    o.ca += t.total; if (!t.refund) { o.n++; o.days[t.dKey] = 1; }
   });
   // Jours de tournée uniquement (lun–ven) : un ticket encaissé après minuit
   // tomberait sinon sur un samedi sans commune et fausserait la comparaison.
@@ -1105,8 +1206,10 @@ function deliverMonthlyReport(mKey, upToDay) {
   });
 
   // Paiements
-  const caEsp  = tk.filter(t => t.pay === 'especes').reduce((a, t) => a + t.total, 0);
-  const caEspP = tkP.filter(t => t.pay === 'especes').reduce((a, t) => a + t.total, 0);
+  const caEsp   = tk.reduce((a, t) => a + t.esp, 0);      // part espèces (mixte inclus), nette
+  const caEspP  = tkP.reduce((a, t) => a + t.esp, 0);
+  const caCarte = tk.reduce((a, t) => a + t.carte, 0);    // part carte (mixte inclus), nette
+  const caAutre = tk.reduce((a, t) => a + t.autre, 0);    // méthodes inconnues — jamais fondues dans la carte
 
   // Top / flop articles avec évolution
   const topArts  = sortDescByVal(artCA).slice(0, 10);
@@ -1170,7 +1273,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   const sensPanier  = nbTk;                   // ce que rapporte 1 € de panier de plus
 
   // ── Distribution des paniers : la médiane dit la vérité, pas la moyenne ────
-  const medianePanier = median(tk.map(t => t.total));
+  const medianePanier = median(sales.map(t => t.total));
   const TRANCHES = [['moins de 12 €', 0, 12], ['12 – 20 €', 12, 20], ['20 – 30 €', 20, 30], ['30 € et plus', 30, 1e9]];
   const distPanier = TRANCHES.map(function (t) {
     const s = tk.filter(x => x.total >= t[1] && x.total < t[2]);
@@ -1181,7 +1284,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   // ── Taille des tickets : le mono-article est le gisement le plus visible ───
   const TAILLES = ['1 article', '2 articles', '3 – 4 articles', '5 et plus'];
   const buckets = { '1 article': 0, '2 articles': 0, '3 – 4 articles': 0, '5 et plus': 0 };
-  tk.forEach(t => {
+  sales.forEach(t => {
     const k = t.nbArt <= 1 ? '1 article' : t.nbArt === 2 ? '2 articles' : t.nbArt <= 4 ? '3 – 4 articles' : '5 et plus';
     buckets[k]++;
   });
@@ -1192,7 +1295,7 @@ function deliverMonthlyReport(mKey, upToDay) {
   tk.forEach(t => {
     const k = t.time.slice(0, 2) + (t.time.slice(3, 5) < '30' ? 'h00' : 'h30');
     const o = bySlot[k] || (bySlot[k] = { ca: 0, n: 0 });
-    o.ca += t.total; o.n++;
+    o.ca += t.total; if (!t.refund) o.n++;
   });
   const slotKeys = Object.keys(bySlot).sort();
   const maxSlotCA = Math.max.apply(null, slotKeys.map(k => bySlot[k].ca));
@@ -1889,14 +1992,20 @@ function deliverMonthlyReport(mKey, upToDay) {
   // ══════════════════════════════════════════════════════════════════════════
   html += part('🔧 6. L\'opérationnel', 'encaissement, gestes commerciaux et obligations d\'hygiène');
 
-  // Paiements
-  const pctE = caTot ? Math.round(caEsp / caTot * 100) : 0;
-  const tkCarte = tk.filter(t => t.pay !== 'especes'), tkEsp = tk.filter(t => t.pay === 'especes');
+  // Paiements — la part carte inclut la portion carte des paiements MIXTES (chaque
+  // moitié comptée sur son mode) ; une méthode inconnue tombe dans « Autre », jamais
+  // silencieusement dans la carte. Panier moyen = par ticket ayant utilisé ce mode.
+  const caCarteP = tkP.reduce((a, t) => a + t.carte, 0);
+  const nEsp   = tk.filter(t => !t.refund && t.esp   > 0).length;
+  const nCarte = tk.filter(t => !t.refund && t.carte > 0).length;
+  const partOf   = v => caTot  ? Math.round(v / caTot  * 100) + '%' : '—';
+  const partPrev = v => caTotP ? Math.round(v / caTotP * 100) + '%' : '—';
   html += sec('💳 Paiements', tbl(
     `<tr>${th('Mode')}${th('Montant')}${th('Part')}${th('Panier moyen')}${th('Mois préc.')}</tr>` +
-    `<tr>${td('💶 Espèces')}${td(fmt(caEsp), 1)}${td(pctE + '%')}${td(tkEsp.length ? fmt(caEsp / tkEsp.length) : '—')}${td(caTotP ? Math.round(caEspP / caTotP * 100) + '%' : '—')}</tr>` +
-    `<tr>${td('💳 Carte')}${td(fmt(caTot - caEsp), 1)}${td(100 - pctE + '%')}${td(tkCarte.length ? fmt((caTot - caEsp) / tkCarte.length) : '—')}${td(caTotP ? 100 - Math.round(caEspP / caTotP * 100) + '%' : '—')}</tr>`) +
-    note('Un ticket réglé en deux fois est compté entièrement côté carte : lis la part carte comme un maximum. Les grosses commandes se réglant plutôt par carte, l\'écart entre les deux paniers ne dit pas grand-chose — mais un « CB acceptée, sans minimum » bien visible ne coûte rien.'));
+    `<tr>${td('💶 Espèces')}${td(fmt(caEsp), 1)}${td(partOf(caEsp))}${td(nEsp ? fmt(caEsp / nEsp) : '—')}${td(partPrev(caEspP))}</tr>` +
+    `<tr>${td('💳 Carte')}${td(fmt(caCarte), 1)}${td(partOf(caCarte))}${td(nCarte ? fmt(caCarte / nCarte) : '—')}${td(partPrev(caCarteP))}</tr>` +
+    (caAutre ? `<tr>${td('❔ Autre')}${td(fmt(caAutre), 1)}${td(partOf(caAutre))}${td('—')}${td('—')}</tr>` : '')) +
+    note('La part carte inclut la portion carte des paiements mixtes. Les grosses commandes se réglant plutôt par carte, l\'écart entre les deux paniers ne dit pas grand-chose — mais un « CB acceptée, sans minimum » bien visible ne coûte rien.'));
 
   // Attachement global
   html += sec('🧲 Taux d\'attachement', tbl(

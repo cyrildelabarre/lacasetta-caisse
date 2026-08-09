@@ -96,6 +96,8 @@
   <div class="sec-title"><span class="badge b-once">À faire une fois</span> Mise en place des automatismes</div>
   <div class="fns">
     <div class="fn-card"><div class="name">createDailyEmailTrigger</div><p class="role">Programme l'<b>e-mail récap du jour</b>.</p><p class="use"><b>Quand :</b> une fois. Envoi chaque <b>soir ~22h15</b>.</p></div>
+    <div class="fn-card"><div class="name">setupWeeklyTrigger</div><p class="role">Programme l'<b>e-mail récap de la semaine</b>.</p><p class="use"><b>Quand :</b> une fois. Envoi chaque <b>samedi ~9h</b>, sur les 7 derniers jours.</p></div>
+    <div class="fn-card"><div class="name">setupMonthlyTrigger</div><p class="role">Programme l'<b>e-mail récap du mois</b>.</p><p class="use"><b>Quand :</b> une fois. Envoi le <b>1er du mois ~20h</b>, sur le mois écoulé.</p></div>
     <div class="fn-card"><div class="name">createOpenTrigger</div><p class="role">Recalcule tous les onglets <b>à chaque ouverture</b> du Google Sheet.</p><p class="use"><b>Quand :</b> une fois.</p></div>
     <div class="fn-card"><div class="name">setupFacebook</div><p class="role">Enregistre ton <b>ID de page + jeton Facebook</b> (dans les réglages privés).</p><p class="use"><b>Quand :</b> une fois, après avoir collé tes identifiants dans la fonction. Facultatif (Facebook).</p></div>
     <div class="fn-card"><div class="name">createDailyFacebookTrigger</div><p class="role">Programme la <b>publication Facebook</b> de l'emplacement du jour.</p><p class="use"><b>Quand :</b> une fois, après <span class="fn">setupFacebook</span>. Publie chaque jour ~10h.</p></div>
@@ -110,6 +112,8 @@
   <div class="sec-title"><span class="badge b-test">Test</span> Envoi / vérification immédiate</div>
   <div class="fns">
     <div class="fn-card"><div class="name">sendDailyReport</div><p class="role">Envoie <b>tout de suite</b> l'e-mail récap du jour.</p><p class="use"><b>Quand :</b> pour tester l'e-mail quotidien.</p></div>
+    <div class="fn-card"><div class="name">sendWeeklyReport</div><p class="role">Envoie <b>tout de suite</b> l'e-mail récap de la semaine.</p><p class="use"><b>Quand :</b> pour tester l'e-mail hebdo.</p></div>
+    <div class="fn-card"><div class="name">previewMonthlyReportNow</div><p class="role">Envoie <b>tout de suite</b> un aperçu du récap du <b>mois en cours</b> (bandeau « Aperçu »).</p><p class="use"><b>Quand :</b> pour tester l'e-mail mensuel.</p></div>
     <div class="fn-card"><div class="name">testPostFacebook</div><p class="role">Publie un <b>post Facebook de test</b> [TEST] sur ta page.</p><p class="use"><b>Quand :</b> pour vérifier la connexion Facebook. Supprime le post ensuite.</p></div>
   </div>
 
