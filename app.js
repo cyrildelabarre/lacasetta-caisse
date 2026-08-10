@@ -3307,6 +3307,7 @@ function renderReporting() {
   const txs   = txsForRange(start, end);
 
   renderFinancier(txs, start, end);
+  renderPizzasVendues(txs);
   renderTopArticles(txs, true);
   renderTopArticles(txs, false);
   renderPaiements(txs);
@@ -3476,6 +3477,39 @@ function renderFinancier(txs, start, end) {
       <div class="kpi"><strong>${fmtEur(max)}</strong>Ticket max</div>
       <div class="kpi"><strong>${fmtEur(min)}</strong>Ticket min</div>
     </div>
+  `;
+}
+
+// Pizzas vendues, ventilées grandes / petites. La taille vient de la catégorie
+// (Grande/Petite, après canonCat) ou, à défaut, du suffixe du nom « (G)/(P) ».
+// Les quantités sont NETTES : un remboursement (ligne à quantité négative) se
+// déduit ; les tickets annulés sont déjà écartés par txsForRange. Une pizza
+// OFFERTE (fidélité, geste) n'est pas « vendue » → comptée à part.
+function pizzaSizeCounts(txs) {
+  const c = { petite: 0, grande: 0, offert: 0 };
+  txs.forEach(tx => tx.lines.forEach(l => {
+    const cat = canonCat((l.category || '').trim());
+    let size = /grande/i.test(cat) ? 'grande' : /petite/i.test(cat) ? 'petite' : null;
+    if (!size) { const n = String(l.name || ''); if (/\(g\)\s*$/i.test(n)) size = 'grande'; else if (/\(p\)\s*$/i.test(n)) size = 'petite'; }
+    if (!size) return;                              // pas une pizza
+    if (isOffertLabel(l.name)) c.offert += l.qty;   // offerte : comptée à part
+    else c[size] += l.qty;
+  }));
+  return c;
+}
+
+function renderPizzasVendues(txs) {
+  const el = document.getElementById('report-pizzas');
+  if (!txs.length) { el.innerHTML = '<p class="empty-msg">Aucune donnée</p>'; return; }
+  const c = pizzaSizeCounts(txs);
+  const total = c.petite + c.grande;
+  el.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi"><strong>${c.petite}</strong>Petites</div>
+      <div class="kpi"><strong>${c.grande}</strong>Grandes</div>
+      <div class="kpi"><strong>${total}</strong>Total vendues</div>
+    </div>
+    ${c.offert ? `<p class="cap" style="margin-top:8px">+ ${c.offert} offerte${c.offert > 1 ? 's' : ''} (non comptée${c.offert > 1 ? 's' : ''} dans les ventes)</p>` : ''}
   `;
 }
 
@@ -3844,6 +3878,15 @@ function exportReport(type) {
         ['Panier moyen', (total / (txs.length || 1)).toFixed(2)],
         ['Ticket max', Math.max(...txs.map(t => t.total)).toFixed(2)],
         ['Ticket min', Math.min(...txs.map(t => t.total)).toFixed(2)],
+      ]; break;
+    }
+    case 'pizzas': {
+      const c = pizzaSizeCounts(txs);
+      rows = [['Taille', 'Quantité vendue'],
+        ['Petites', c.petite],
+        ['Grandes', c.grande],
+        ['Total', c.petite + c.grande],
+        ['Offertes (non comptées)', c.offert],
       ]; break;
     }
     case 'top-articles':
