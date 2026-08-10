@@ -121,9 +121,16 @@ function readValidatedRows(ss) {
     .filter(r => r[COL.id] && r[COL.statut] === 'Validé');
 }
 
-function dayKey(d)   { return d instanceof Date ? Utilities.formatDate(d, TZ, 'yyyy-MM-dd') : String(d); }
-function dayLabel(d) { return d instanceof Date ? Utilities.formatDate(d, TZ, 'dd/MM/yyyy')  : String(d); }
-function asDate(d)   { return d instanceof Date ? d : new Date(d); }
+// Une cellule de date peut être INVALIDE (vide, texte, vente malformée) : new Date('')
+// ou new Date('xxx') reste un objet Date, mais Utilities.formatDate y lève
+// « Invalid time value » et fait planter TOUT le rapport / le chargement. On teste
+// donc la validité avant de formater ; une date invalide donne '' au lieu de crasher.
+function isValidDate(d) { return d instanceof Date && !isNaN(d.getTime()); }
+function dayKey(d)   { return isValidDate(d) ? Utilities.formatDate(d, TZ, 'yyyy-MM-dd') : ''; }
+function dayLabel(d) { return isValidDate(d) ? Utilities.formatDate(d, TZ, 'dd/MM/yyyy')  : ''; }
+function asDate(d)   { return d instanceof Date ? d : new Date(d); }   // peut être invalide → tester isValidDate
+function hourOf(v)   { const d = asDate(v); return isValidDate(d) ? Utilities.formatDate(d, TZ, 'HH')    : ''; }
+function timeOf(v)   { const d = asDate(v); return isValidDate(d) ? Utilities.formatDate(d, TZ, 'HH:mm') : ''; }
 
 // Construit toutes les agrégations nécessaires en un seul passage.
 function computeStats(rows) {
@@ -134,7 +141,7 @@ function computeStats(rows) {
     lines.push({
       art: r[COL.article], cat: normCat(r[COL.cat]),
       qty: Number(r[COL.qty])||0, sub: Number(r[COL.sub])||0,
-      hour: Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH'),
+      hour: hourOf(r[COL.date]),
       dKey: dayKey(r[COL.date]), date: asDate(r[COL.date]),
       tid: r[COL.id]   // rattache la ligne à son ticket (co-achats, paniers types)
     });
@@ -164,8 +171,8 @@ function computeStats(rows) {
         loc:   r[COL.loc] || '(non défini)',
         date:  asDate(r[COL.date]),
         dKey:  dayKey(r[COL.date]),
-        hour:  Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH'),
-        time:  Utilities.formatDate(asDate(r[COL.date]), TZ, 'HH:mm'),
+        hour:  hourOf(r[COL.date]),
+        time:  timeOf(r[COL.date]),
         nbArt: 0,
         cats:  {}
       };
@@ -2650,7 +2657,7 @@ function getAllTransactions() {
       const pp = parsePay(r[COL.pay]);
       map[id] = {
         id: String(id),   // toujours renvoyer l'id en chaîne (un id tout-numérique revient en nombre du Sheet)
-        date: d.toISOString(),
+        date: isValidDate(d) ? d.toISOString() : '',   // date invalide : '' au lieu de lever « Invalid time value »
         location: r[COL.loc] || '',
         method: pp.method,
         split: pp.split,
@@ -2768,4 +2775,24 @@ function deleteLastSale() {
     Logger.log(`Supprimé ${count} ligne(s) du ticket ${lastId}. Tous les onglets ont été mis à jour.`);
     return { id: lastId, rows: count };
   } finally { lock.releaseLock(); }
+}
+
+// Repère les rangées de l'onglet Transactions dont la DATE est invalide (celles
+// qui provoquent « Invalid time value »). Ne modifie rien : logue le n° de rangée
+// dans la feuille + l'ID + l'article, pour que tu ailles corriger la cellule Date.
+function findBadDateRows() {
+  const ss    = getOrCreateSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) { Logger.log('Onglet Transactions introuvable.'); return; }
+  const lr = sheet.getLastRow();
+  if (lr < 2) { Logger.log('Aucune vente.'); return; }
+  const rows = sheet.getRange(2, 1, lr - 1, HEADERS.length).getValues();
+  const bad = [];
+  rows.forEach((r, i) => {
+    if (!r[COL.id]) return;                       // rangée vide : on ignore
+    if (!isValidDate(asDate(r[COL.date])))        // date invalide
+      bad.push(`• rangée ${i + 2} · ticket ${r[COL.id]} · ${r[COL.article]} · date brute = "${r[COL.date]}"`);
+  });
+  if (!bad.length) { Logger.log('✅ Aucune date invalide.'); return; }
+  Logger.log(`⚠️ ${bad.length} rangée(s) à date invalide (corrige la colonne « Date ») :\n` + bad.join('\n'));
 }
