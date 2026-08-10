@@ -132,12 +132,31 @@ function asDate(d)   { return d instanceof Date ? d : new Date(d); }   // peut �
 function hourOf(v)   { const d = asDate(v); return isValidDate(d) ? Utilities.formatDate(d, TZ, 'HH')    : ''; }
 function timeOf(v)   { const d = asDate(v); return isValidDate(d) ? Utilities.formatDate(d, TZ, 'HH:mm') : ''; }
 
+// Signature d'une rangée de vente, pour repérer les DOUBLONS (même vente écrite
+// deux fois dans le Sheet, ex. remontée rejouée après timeout). On prend l'ID + le
+// contenu de la ligne, mais PAS la colonne « Synchronisé le » : au ré-essai seule
+// cette date change, donc l'exclure permet justement de reconnaître le doublon.
+// Séparateur = caractère de contrôle 0x01, jamais présent dans un nom d'article.
+function rowSig(r) {
+  var SEP = String.fromCharCode(1);
+  return [r[COL.id], r[COL.article], r[COL.cat], r[COL.pu], r[COL.qty], r[COL.sub]].join(SEP);
+}
+
 // Construit toutes les agrégations nécessaires en un seul passage.
 function computeStats(rows) {
   const lines   = [];                          // une entrée par ligne d'article
   const tickets = {};                          // par ticket (compté une seule fois)
+  const seenRow = new Set();                   // dédoublonnage défensif (voir ci-dessous)
 
   rows.forEach(r => {
+    // Une même vente a pu être écrite DEUX FOIS dans le Sheet (remontée rejouée
+    // après timeout, avant que le verrou de doPost soit en place) : le total, lu
+    // une seule fois par ticket, reste juste, mais les rangées en double gonflent
+    // qté/CA par ARTICLE. On ignore ici toute rangée strictement identique déjà vue.
+    const sig = rowSig(r);
+    if (seenRow.has(sig)) return;
+    seenRow.add(sig);
+
     lines.push({
       art: r[COL.article], cat: normCat(r[COL.cat]),
       qty: Number(r[COL.qty])||0, sub: Number(r[COL.sub])||0,
@@ -2649,6 +2668,7 @@ function getAllTransactions() {
   if (lr < 2) return [];
   const data = sheet.getRange(2, 1, lr - 1, HEADERS.length).getValues();
   const map = {};
+  const seenRow = new Set();   // rangées identiques d'un même ticket : une seule fois
   data.forEach(r => {
     const id = r[COL.id];
     if (!id) return;
@@ -2667,6 +2687,13 @@ function getAllTransactions() {
         lines: []
       };
     }
+    // Dédoublonnage défensif (même logique que computeStats) : une vente écrite
+    // deux fois dans le Sheet ferait apparaître ses ARTICLES en double (mémo,
+    // reporting) alors que le total, lu une seule fois, reste juste. On ignore
+    // toute rangée strictement identique déjà vue pour ce ticket.
+    const sig = rowSig(r);
+    if (seenRow.has(sig)) return;
+    seenRow.add(sig);
     map[id].lines.push({
       name: r[COL.article], category: normCat(r[COL.cat]),
       price: Number(r[COL.pu]) || 0, qty: Number(r[COL.qty]) || 0, subtotal: Number(r[COL.sub]) || 0
@@ -2796,3 +2823,69 @@ function findBadDateRows() {
   if (!bad.length) { Logger.log('✅ Aucune date invalide.'); return; }
   Logger.log(`⚠️ ${bad.length} rangée(s) à date invalide (corrige la colonne « Date ») :\n` + bad.join('\n'));
 }
+
+// ════════════════════════════════════════════
+//  MAINTENANCE : rangées EN DOUBLE de l'onglet Transactions
+// ════════════════════════════════════════════
+// Une même vente a pu être écrite DEUX FOIS dans le Sheet (remontée rejouée après
+// timeout, avant que le verrou de doPost ne soit en place) : le total, lu une
+// seule fois par ticket, reste juste, mais les ARTICLES sont comptés en double
+// dans tous les rapports. La lecture (computeStats / getAllTransactions) ignore
+// désormais ces doublons ; cette fonction assainit la SOURCE une bonne fois.
+//
+// PAR SÉCURITÉ ELLE NE SUPPRIME RIEN par défaut : dedupeTransactionRows() se
+// contente d'un compte-rendu. Pour supprimer réellement : dedupeTransactionRows(true).
+function dedupeTransactionRows(apply) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { Logger.log('Script occupé, réessaie.'); return; }
+  try {
+    const ss    = getOrCreateSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) { Logger.log('Onglet Transactions introuvable.'); return; }
+    const lr = sheet.getLastRow();
+    if (lr < 2) { Logger.log('Aucune vente.'); return; }
+
+    const rows   = sheet.getRange(2, 1, lr - 1, HEADERS.length).getValues();
+    const seen   = new Set();
+    const dupIdx = new Set();   // index (0-based dans `rows`) des rangées en double
+    const sample = [];
+    rows.forEach((r, i) => {
+      if (!r[COL.id]) return;
+      const sig = rowSig(r);
+      if (seen.has(sig)) {
+        dupIdx.add(i);
+        if (sample.length < 25)
+          sample.push(`• ${dayLabel(r[COL.date])} ${r[COL.heure]} · ${r[COL.article]} ×${r[COL.qty]} · ${r[COL.total]} €`);
+      } else {
+        seen.add(sig);
+      }
+    });
+
+    if (!dupIdx.size) { Logger.log('✅ Aucune rangée en double. Rien à faire.'); return; }
+
+    Logger.log(`⚠️ ${dupIdx.size} rangée(s) en double sur ${rows.length}.`);
+    Logger.log('Aperçu :\n' + sample.join('\n') + (dupIdx.size > sample.length ? `\n… (+${dupIdx.size - sample.length} autres)` : ''));
+
+    if (!apply) {
+      Logger.log('MODE APERÇU — rien supprimé. Pour appliquer réellement : exécuter dedupeTransactionRows(true).');
+      return;
+    }
+
+    // Réécriture de la plage avec les seules rangées conservées, puis suppression
+    // de la queue devenue vide (plus rapide et plus sûr qu'un deleteRow par doublon).
+    const kept = rows.filter((r, i) => !dupIdx.has(i));
+    sheet.getRange(2, 1, rows.length, HEADERS.length).clearContent();
+    if (kept.length) sheet.getRange(2, 1, kept.length, HEADERS.length).setValues(kept);
+    if (rows.length > kept.length) sheet.deleteRows(kept.length + 2, rows.length - kept.length);
+    sheet.getRange('B2:B').setNumberFormat('dd/mm/yyyy');
+    numberTickets(sheet);
+    createAllSheets(ss);
+    Logger.log(`🧹 ${dupIdx.size} rangée(s) en double supprimée(s). Onglets recalculés.`);
+  } finally { lock.releaseLock(); }
+}
+
+// Raccourcis SANS argument pour l'éditeur : le menu ▶ Exécuter lance une fonction
+// sans pouvoir lui passer « true » à la main. Choisis l'un de ces deux-là dans la
+// liste des fonctions.
+function dedupeTransactionsApercu()    { dedupeTransactionRows(false); }  // compte-rendu seul, ne supprime RIEN
+function dedupeTransactionsAppliquer() { dedupeTransactionRows(true);  }  // supprime réellement les doublons
