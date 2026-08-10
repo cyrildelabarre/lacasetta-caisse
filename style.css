@@ -849,6 +849,7 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
   align-items: center;
   gap: .8rem;
   flex-shrink: 0;
+  flex-wrap: wrap;   /* téléphone : date + boutons passent à la ligne au lieu de déborder */
 }
 .memo-controls label { font-weight: 600; }
 .memo-controls input[type=date] {
@@ -1201,15 +1202,19 @@ body.testmode header { box-shadow: inset 0 -3px 0 #e0a93a; }
   background: var(--white);
   border-radius: 14px;
   padding: 1.5rem;
-  min-width: 320px;
+  /* min() : jamais plus large que l'écran — 320px fixes débordaient sur téléphone */
+  min-width: min(320px, 92vw);
   max-width: 400px;
   width: 90%;
   box-shadow: 0 8px 32px rgba(0,0,0,.2);
   display: flex;
   flex-direction: column;
   gap: .6rem;
+  max-height: min(92vh, 92dvh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
-.modal-sm { min-width: 280px; }
+.modal-sm { min-width: min(280px, 88vw); }
 .modal h3 { font-size: 1.05rem; margin-bottom: .3rem; }
 .modal label { font-size: .82rem; color: var(--mid); font-weight: 600; }
 .modal input,
@@ -1716,4 +1721,91 @@ body:not(.testmode) .memo-actions .btn-receipt-tx { display: none !important; }
   }
   body.printing-receipt #modal-receipt .modal { max-width: 320px; width: auto; box-shadow: none; margin: 0; }
   body.printing-receipt #modal-receipt .modal-actions { display: none !important; }
+}
+
+/* ════════════════ RESPONSIVE ════════════════
+   Placé en fin de fichier : à spécificité égale, ces règles gagnent sur les
+   règles de base (desktop inchangé — tout est confiné dans des media queries).
+   Breakpoints : ≤900px iPad portrait (déjà traité plus haut), ≤600px téléphone,
+   (pointer: coarse) = tout écran tactile, quelle que soit sa taille. */
+
+/* ── Écrans tactiles (iPad ET téléphone) : cibles ≥ 44px (reco Apple) ──
+   Ne cible que le tactile : sur desktop à la souris, rien ne change. */
+@media (pointer: coarse) {
+  /* Boutons d'action principaux et onglets */
+  .tab-btn, .pay-btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-danger,
+  .dash-period, .horaires-view, .menu-item, .temp-enc-tab, .reason-chip,
+  .location-chip, .btn-export, .pin-key, .banner-btn, .temp-type-btn,
+  .report-scope button, .report-more button, .et-nav button, .temp-month-nav button {
+    min-height: 44px;
+  }
+  /* ± quantité du ticket : 22px était intouchable au doigt. 38px visibles +
+     padding de la ligne ≈ zone de 44px sans faire exploser la hauteur des lignes. */
+  .tl-qty-btn { width: 38px; height: 38px; font-size: 1.25rem; }
+  .tl-qty { min-width: 26px; font-size: 1rem; }
+  .tl-remove { font-size: 1.05rem; padding: .55rem; }
+  .ticket-line { padding: .35rem .6rem; }
+  /* Flèches ▲▼ des catégories et boutons d'édition employé/enceinte */
+  .cat-move button { width: 40px; height: 26px; font-size: .85rem; }
+  .client-edit-btn, .employee-sheet, .employee-star, .employee-edit, .employee-del {
+    min-width: 44px; min-height: 44px;
+  }
+  .tab-btn { padding-top: .55rem; padding-bottom: .55rem; }
+}
+
+/* ── Téléphone (et petite tablette étroite) ── */
+@media (max-width: 600px) {
+  /* En-tête : le logo se resserre, les onglets défilent horizontalement dans
+     leur bande (pas de débordement de page), la date est masquée (l'heure de
+     l'iPad/du téléphone est déjà à l'écran) — le verrou reste visible. */
+  header { gap: .5rem; padding: .5rem .6rem; }
+  .logo { font-size: 1.02rem; }
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;          /* Firefox : pas d'ascenseur dans l'en-tête */
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { flex: 0 0 auto; white-space: nowrap; }
+  #date-display { display: none; }
+
+  /* Onglets pleine page : marges réduites */
+  .dashboard-layout, .memo-layout, .reporting-layout,
+  .clients-layout, .horaires-layout { padding: .7rem .8rem; }
+
+  /* Reporting : 1 colonne (2 colonnes illisibles à 400px) ;
+     les cartes « pleine largeur » suivent automatiquement. */
+  .report-grid { grid-template-columns: 1fr; }
+  #card-tickets, #card-recommandations { grid-column: 1 / -1; }
+
+  /* Caisse : la barre de catégories reste sur une ligne mais devient
+     défilable ; libellés compactés sans déborder de leur bouton. */
+  .categories { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .cat-btn { flex: 0 0 auto; min-width: 96px; font-size: .82rem; padding: .55rem .5rem; overflow: hidden; text-overflow: ellipsis; }
+  /* En-tête du ticket : titre + boutons peuvent se replier sur 2 lignes */
+  .ticket-header { flex-wrap: wrap; gap: .3rem; padding: .5rem .8rem; }
+  /* Caisse : cartes articles plus compactes → 3 colonnes sur ~390px */
+  .articles-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: .5rem; padding: .6rem; }
+  .article-emoji { font-size: 1.6rem; }
+  /* Ticket : plafond un peu plus bas pour laisser le catalogue respirer */
+  .ticket-panel { max-height: max(46dvh, 280px); }
+
+  /* Mémo : le tableau garde des colonnes lisibles et défile HORIZONTALEMENT
+     dans son cadre (la page, elle, ne défile jamais latéralement). */
+  .memo-table-wrap { overflow-x: auto; }
+  .memo-table { min-width: 560px; }
+
+  /* Horaires : cases du calendrier mensuel moins hautes */
+  .hm-day { min-height: 56px; }
+  .horaires-period { min-width: 0; flex: 1; }
+
+  /* Toast : pleine largeur en bas plutôt que collé à droite (il débordait) */
+  .toast { left: 1rem; right: 1rem; text-align: center; }
+
+  /* KPIs du tableau de bord : 2 par ligne max */
+  .db-kpis { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; }
+
+  /* Fiches client : les stats passent sous le nom au lieu de pousser la largeur */
+  .client-row { flex-wrap: wrap; gap: .4rem .9rem; }
+  .client-loyalty { flex: 1 1 40%; }
 }
