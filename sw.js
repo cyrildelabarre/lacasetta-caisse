@@ -5,8 +5,9 @@
 // hors ligne sur d'anciens fichiers. (« activate » supprime les anciens caches
 // versionnés lacasetta-caisse-v1…v6 encore présents sur les appareils.)
 const CACHE = 'lacasetta-caisse';
-// Chemins RELATIFS : le site est servi sous /lacasetta-caisse/ (GitHub Pages),
-// des chemins absolus (/index.html) pointeraient hors du site et casseraient le SW.
+// Chemins RELATIFS : le site est servi depuis la racine de lacasetta.pizza.
+// Les garder relatifs (./) rend le SW insensible au chemin de base — il marche
+// pareil que le site soit à la racine ou dans un sous-dossier.
 const ASSETS = [
   './',
   './index.html',
@@ -35,8 +36,8 @@ self.addEventListener('activate', e => {
 
 // Fetch : NETWORK-FIRST pour nos propres fichiers (toujours la dernière version
 // quand il y a du réseau), avec repli sur le cache si hors-ligne.
-// cache: 'no-store' contourne le cache HTTP de Safari (max-age de GitHub Pages),
-// sinon une mise à jour peut mettre ~10 min à apparaître sur l'iPad.
+// cache: 'no-store' contourne le cache HTTP du navigateur (max-age de
+// l'hébergeur), sinon une mise à jour peut tarder à apparaître sur l'iPad.
 // Les requêtes POST et externes (Google Sheets) passent directement au réseau.
 self.addEventListener('fetch', e => {
   const req = e.request;
