@@ -2499,6 +2499,7 @@ function renderMemo() {
     <div class="summary-chip"><strong>${fmtEur(byMethod.carte)}</strong>Carte</div>
     <div class="summary-chip"><strong>${pz.petite}</strong>🍕 Petites</div>
     <div class="summary-chip"><strong>${pz.grande}</strong>🍕 Grandes</div>
+    <div class="summary-chip"><strong>${pz.petite + pz.grande}</strong>🍕 Total pizzas</div>
   `;
 
   // Table
