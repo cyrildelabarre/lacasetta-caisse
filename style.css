@@ -454,15 +454,23 @@ header {
   .menu-list { grid-template-columns: 1fr; }
 }
 
-/* iPad en portrait : l'en-tête est une ligne rigide (logo + onglets + infos, tous
-   insécables) qui poussait la page une centaine de pixels au-delà de l'écran —
-   toute l'app défilait horizontalement. Resserrer les espacements suffit : aucun
-   libellé n'est masqué, rien ne disparaît. */
+/* iPad portrait ET téléphone : l'en-tête est une ligne rigide (logo + onglets +
+   date + emplacement + Menu + Verrouiller). En dessous de ~900px, le bloc de
+   droite reste large (libellés « Menu »/« Verrouiller » + date) et écrase les
+   onglets à ~160px → leurs textes se chevauchent. On compacte donc le bloc de
+   droite : date masquée (redondante avec l'horloge de l'appareil), boutons ☰/🔒
+   en icônes seules, emplacement resserré. Les onglets récupèrent la place et
+   défilent horizontalement dans leur bande si besoin — plus de chevauchement. */
 @media (max-width: 900px) {
-  header        { gap: .7rem; padding: .6rem .8rem; }
-  .tabs         { gap: .25rem; min-width: 0; }
-  .tab-btn      { padding: .45rem .6rem; }
-  .header-info  { gap: .45rem; }
+  header        { gap: .6rem; padding: .55rem .75rem; }
+  #date-display { display: none; }
+  .tabs         { gap: .3rem; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn      { padding: .45rem .7rem; flex: 0 0 auto; white-space: nowrap; }
+  .header-info  { gap: .4rem; min-width: 0; }
+  .btn-label    { display: none; }
+  .btn-lock     { padding: .3rem .5rem; font-size: 1.1rem; }
+  .btn-location { max-width: 30vw; }
 }
 
 /* Item « Mode formation » + état actif (pleine largeur, bien repérable) */
@@ -1756,28 +1764,18 @@ body:not(.testmode) .memo-actions .btn-receipt-tx { display: none !important; }
 
 /* ── Téléphone (et petite tablette étroite) ── */
 @media (max-width: 600px) {
-  /* En-tête : le logo se resserre, les onglets défilent horizontalement dans
-     leur bande (pas de débordement de page), la date est masquée (l'heure de
-     l'iPad/du téléphone est déjà à l'écran) — le verrou reste visible. */
-  header { gap: .5rem; padding: .5rem .6rem; }
-  .logo { font-size: 1.02rem; }
-  .tabs {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;          /* Firefox : pas d'ascenseur dans l'en-tête */
-  }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab-btn { flex: 0 0 auto; white-space: nowrap; }
-  #date-display { display: none; }
-
-  /* Les libellés « Menu »/« Verrouiller » et la largeur du bloc de droite
-     poussaient des boutons HORS de l'écran (invisibles) et débordaient en
-     largeur. Sur téléphone : boutons ☰/🔒 en icônes seules, bloc compact,
-     et l'emplacement se resserre — tout tient sur une ligne sans déborder. */
-  .btn-label      { display: none; }
-  .header-info    { gap: .4rem; min-width: 0; }
-  .btn-lock       { padding: .3rem .5rem; font-size: 1.1rem; }
-  .btn-location   { max-width: 34vw; }
+  /* En-tête sur téléphone : on le laisse passer sur DEUX lignes — logo + bloc de
+     droite (emplacement, ☰, 🔒) sur la 1re, et les ONGLETS sur une 2e ligne
+     pleine largeur. Sinon, vers 375px, tout se disputait la même ligne et les
+     onglets étaient écrasés à ~10px (illisibles). La compaction du bloc de droite
+     (date masquée, ☰/🔒 en icônes) vient déjà de la règle ≤900px ci-dessus. */
+  header       { flex-wrap: wrap; gap: .4rem .5rem; padding: .5rem .6rem; }
+  .logo        { font-size: 1.15rem; }
+  .logo-text   { display: none; }                /* 🍕 seul : le nom mangeait la place */
+  .header-info { order: 1; margin-left: auto; }  /* logo + bloc de droite tiennent sur la 1re ligne */
+  .tabs        { order: 2; flex: 1 0 100%; gap: .25rem; }  /* onglets sur leur propre ligne, pleine largeur */
+  .tab-btn     { padding: .5rem .55rem; }         /* resserré pour que les 4 onglets tiennent sans défiler */
+  .btn-location{ max-width: 46vw; }
 
   /* Onglets pleine page : marges réduites */
   .dashboard-layout, .memo-layout, .reporting-layout,
