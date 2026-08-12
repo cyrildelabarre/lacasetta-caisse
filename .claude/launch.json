@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-l", "4000", "E:\\D\\LaCasetta-POS\\lacasetta-caisse"],
       "port": 4000
+    },
+    {
+      "name": "pos-dist",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "4001", "E:\\D\\LaCasetta-POS\\lacasetta-caisse\\dist"],
+      "port": 4001
     }
   ]
 }
