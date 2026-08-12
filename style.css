@@ -1786,10 +1786,28 @@ body:not(.testmode) .memo-actions .btn-receipt-tx { display: none !important; }
   .report-grid { grid-template-columns: 1fr; }
   #card-tickets, #card-recommandations { grid-column: 1 / -1; }
 
-  /* Caisse : la barre de catégories reste sur une ligne mais devient
-     défilable ; libellés compactés sans déborder de leur bouton. */
-  .categories { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .cat-btn { flex: 0 0 auto; min-width: 96px; font-size: .82rem; padding: .55rem .5rem; overflow: hidden; text-overflow: ellipsis; }
+  /* Caisse : la barre de catégories défile horizontalement. Elle se faisait
+     ÉCRASER en hauteur par la colonne (boutons ~22px → libellés illisibles) :
+     flex-shrink:0 la garde à sa hauteur naturelle, overflow-y:hidden coupe le
+     scroll vertical parasite (déclenché par overflow-x:auto), et les boutons
+     sont centrés à ≥44px — lisibles et tactiles. */
+  .categories {
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: .5rem .6rem;
+  }
+  .cat-btn {
+    flex: 0 0 auto;
+    min-width: 88px;
+    min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .85rem;
+    padding: .4rem .7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* En-tête du ticket : titre + boutons peuvent se replier sur 2 lignes */
   .ticket-header { flex-wrap: wrap; gap: .3rem; padding: .5rem .8rem; }
   /* Caisse : cartes articles plus compactes → 3 colonnes sur ~390px */
