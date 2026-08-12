@@ -2489,11 +2489,16 @@ function renderMemo() {
   const totalCA = active.reduce((s, t) => s + t.total, 0);
   const byMethod = { especes: 0, carte: 0 };
   active.forEach(t => { const pp = payParts(t); byMethod.especes += pp.especes; byMethod.carte += pp.carte; });
+  // Pizzas vendues du jour, ventilées grandes / petites (mêmes règles que le
+  // reporting : offertes comptées à part, remboursements déduits).
+  const pz = pizzaSizeCounts(active);
   document.getElementById('memo-summary').innerHTML = `
     <div class="summary-chip"><strong>${active.length}</strong>tickets</div>
     <div class="summary-chip"><strong>${fmtEur(totalCA)}</strong>CA du jour</div>
     <div class="summary-chip"><strong>${fmtEur(byMethod.especes)}</strong>Espèces</div>
     <div class="summary-chip"><strong>${fmtEur(byMethod.carte)}</strong>Carte</div>
+    <div class="summary-chip"><strong>${pz.petite}</strong>🍕 Petites</div>
+    <div class="summary-chip"><strong>${pz.grande}</strong>🍕 Grandes</div>
   `;
 
   // Table
